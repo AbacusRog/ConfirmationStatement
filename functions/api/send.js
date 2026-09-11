@@ -150,6 +150,7 @@ export async function onRequestPost(context) {
     body: JSON.stringify({
       from: env.SEND_FROM_ADDRESS || 'Roger <roger@abacusconsultancy.co.uk>',
       to: [to],
+      bcc: [env.BCC_ADDRESS || 'roger@abacusconsultancy.co.uk'],
       subject,
       html,
       text: body,

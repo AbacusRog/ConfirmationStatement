@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase, Client } from '../supabaseClient'
 
 function buildBody(companyName: string, forename: string) {
@@ -75,6 +75,7 @@ export default function EmailPreview({
     `Confirmation Statement – ${client.client_name}`
   )
   const [body, setBody] = useState(buildBody(client.client_name, client.forename ?? ''))
+  const lastAutoBodyRef = useRef(body)
   const [sending, setSending] = useState(false)
   const [status, setStatus] = useState<'idle' | 'sent' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
@@ -86,9 +87,20 @@ export default function EmailPreview({
     setSurname(client.surname ?? '')
     setStatementDate(client.confirmation_statement_date ?? '')
     setSubject(`Confirmation Statement – ${client.client_name}`)
-    setBody(buildBody(client.client_name, client.forename ?? ''))
+    const freshBody = buildBody(client.client_name, client.forename ?? '')
+    setBody(freshBody)
+    lastAutoBodyRef.current = freshBody
     setStatus('idle')
   }, [client.id])
+
+  // If the greeting name is filled in (or changed) and the message hasn't
+  // been hand-edited since the last auto-fill, refresh the "Hi ..." line
+  // so you don't have to update it yourself.
+  useEffect(() => {
+    const autoBody = buildBody(client.client_name, forename)
+    setBody((prev) => (prev === lastAutoBodyRef.current ? autoBody : prev))
+    lastAutoBodyRef.current = autoBody
+  }, [forename, client.client_name])
 
   const dueDate = statementDate ? addDays(statementDate, 14) : ''
   const missingEmail = !email.trim()

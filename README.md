@@ -44,6 +44,9 @@ same account and verified domain — just create a new API key for this app
    - `RESEND_API_KEY` — from Resend step 2
    - `SEND_FROM_ADDRESS` — e.g. `Roger <roger@abacusconsultancy.co.uk>`
      (optional — defaults to this if not set)
+   - `BCC_ADDRESS` — e.g. `roger@abacusconsultancy.co.uk` (optional —
+     every email sent also BCCs this address by default; set it if you
+     want a different inbox copied instead)
 4. Redeploy.
 
 ## Using it day to day
@@ -78,8 +81,17 @@ clients at once (rather than adding them one at a time in the app):
 
 ## Notes
 
-- The `clients` table has RLS enabled but with an open policy, since the
-  anon key is only ever used by this app and never exposed publicly beyond
-  it — same model as your other internal apps.
+- The `cs_mailer_clients` table has RLS enabled but with an open policy,
+  since the anon key is only ever used by this app and never exposed
+  publicly beyond it — same model as your other internal apps.
 - The email is sent from `roger@abacusconsultancy.co.uk` via Resend, so it
   should land looking like a normal email from you, not a no-reply address.
+- Every send is BCC'd to you automatically.
+- If you type a forename into a client that didn't have one, the "Hi ..."
+  greeting in the message updates itself automatically — as long as you
+  haven't already hand-edited the message. Once you start editing the
+  message yourself, it stops auto-updating so it never overwrites your
+  changes.
+- Use **+ New client** (next to the search box) to add a company that
+  isn't in the list yet, or click **Edit** next to any search result to
+  correct their details — no need to go into Supabase for either.

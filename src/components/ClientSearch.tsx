@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase, Client } from '../supabaseClient'
+import ClientForm from './ClientForm'
 
 export default function ClientSearch({
   onSelect,
@@ -11,6 +12,9 @@ export default function ClientSearch({
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [searchError, setSearchError] = useState('')
+  const [form, setForm] = useState<
+    { mode: 'add'; initial: Partial<Client> } | { mode: 'edit'; initial: Client } | null
+  >(null)
   const boxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -51,9 +55,17 @@ export default function ClientSearch({
 
   return (
     <div ref={boxRef} className="relative w-full">
-      <label className="block text-sm font-medium text-slate-650 mb-1.5">
-        Find the client company
-      </label>
+      <div className="flex items-end justify-between gap-3 mb-1.5">
+        <label className="block text-sm font-medium text-slate-650">
+          Find the client company
+        </label>
+        <button
+          onClick={() => setForm({ mode: 'add', initial: {} })}
+          className="text-sm font-medium text-accent hover:text-accent-dark transition-colors"
+        >
+          + New client
+        </button>
+      </div>
       <input
         type="text"
         value={query}
@@ -77,30 +89,67 @@ export default function ClientSearch({
             </div>
           )}
           {!loading && !searchError && results.length === 0 && (
-            <div className="px-3.5 py-3 text-sm text-slate-650">
-              No match for "{query}". Check the spelling, or add this client
-              in Supabase if they're new.
+            <div className="px-3.5 py-3">
+              <div className="text-sm text-slate-650 mb-2">
+                No match for "{query}".
+              </div>
+              <button
+                onClick={() => {
+                  setForm({ mode: 'add', initial: { client_name: query } })
+                  setOpen(false)
+                }}
+                className="text-sm font-medium text-accent hover:text-accent-dark transition-colors"
+              >
+                + Add "{query}" as a new client
+              </button>
             </div>
           )}
           {!loading &&
             results.map((c) => (
-              <button
+              <div
                 key={c.id}
-                onClick={() => {
-                  onSelect(c)
-                  setQuery(c.client_name)
-                  setOpen(false)
-                }}
-                className="w-full text-left px-3.5 py-2.5 hover:bg-accent-light transition-colors border-b border-line last:border-0"
+                className="flex items-center justify-between border-b border-line last:border-0 hover:bg-accent-light transition-colors"
               >
-                <div className="text-[15px] text-ink">{c.client_name}</div>
-                <div className="text-xs text-slate-650 mt-0.5">
-                  {c.email || 'No email on file'}
-                  {c.client_code ? ` · ${c.client_code}` : ''}
-                </div>
-              </button>
+                <button
+                  onClick={() => {
+                    onSelect(c)
+                    setQuery(c.client_name)
+                    setOpen(false)
+                  }}
+                  className="flex-1 text-left px-3.5 py-2.5"
+                >
+                  <div className="text-[15px] text-ink">{c.client_name}</div>
+                  <div className="text-xs text-slate-650 mt-0.5">
+                    {c.email || 'No email on file'}
+                    {c.client_code ? ` · ${c.client_code}` : ''}
+                  </div>
+                </button>
+                <button
+                  onClick={() => {
+                    setForm({ mode: 'edit', initial: c })
+                    setOpen(false)
+                  }}
+                  className="px-3 text-xs font-medium text-slate-650 hover:text-accent-dark transition-colors"
+                  title="Edit client details"
+                >
+                  Edit
+                </button>
+              </div>
             ))}
         </div>
+      )}
+
+      {form && (
+        <ClientForm
+          mode={form.mode}
+          initial={form.initial}
+          onCancel={() => setForm(null)}
+          onSaved={(client) => {
+            setForm(null)
+            onSelect(client)
+            setQuery(client.client_name)
+          }}
+        />
       )}
     </div>
   )
