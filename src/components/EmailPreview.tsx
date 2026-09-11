@@ -71,7 +71,7 @@ export default function EmailPreview({
 
       if (Object.keys(updates).length > 0) {
         const { error: updateError } = await supabase
-          .from('clients')
+          .from('cs_mailer_clients')
           .update(updates)
           .eq('id', client.id)
         if (updateError) throw updateError
@@ -88,7 +88,7 @@ export default function EmailPreview({
       }
 
       const { error: logError } = await supabase
-        .from('clients')
+        .from('cs_mailer_clients')
         .update({ last_sent_at: new Date().toISOString() })
         .eq('id', client.id)
       if (logError) throw logError

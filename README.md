@@ -5,15 +5,22 @@ templated reminder, and send it — without leaving the app or touching Outlook.
 
 ## 1. Set up Supabase
 
-1. Create a new Supabase project.
+1. Create a new Supabase project (or use an existing one — see note below).
 2. Open the SQL Editor and run everything in `supabase/schema.sql`. This
-   creates the `clients` table.
-3. Go to **Table Editor → clients → Insert → Import data from CSV**, and
-   upload `clients_import.csv` (346 clients from your spreadsheet — 121 of
-   them have no email yet; the app will flag those so you can fill them in
-   as you go).
+   creates the `cs_mailer_clients` table.
+3. Go to **Table Editor → cs_mailer_clients → Insert → Import data from CSV**,
+   and upload `clients_import.csv` (346 clients from your spreadsheet — 121
+   of them have no email yet; the app will flag those so you can fill them
+   in as you go).
 4. Go to **Project Settings → API** and copy the **Project URL** and
    **anon public key** — you'll need these in step 3 below.
+
+> **Using an existing Supabase project (e.g. the payslip mailer's)?** The
+> table is named `cs_mailer_clients`, not `clients`, specifically so it
+> won't collide with a `clients` table another app already created in that
+> same project. If you ever see `create table if not exists` silently do
+> nothing followed by a "column does not exist" error, it means something
+> in that project already owns the table name you're trying to use.
 
 ## 2. Set up Resend (email sending)
 

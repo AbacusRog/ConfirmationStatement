@@ -20,7 +20,7 @@ export default function ClientSearch({
     setLoading(true)
     const timeout = setTimeout(async () => {
       const { data, error } = await supabase
-        .from('clients')
+        .from('cs_mailer_clients')
         .select('*')
         .ilike('client_name', `%${query.trim()}%`)
         .order('client_name')
