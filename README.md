@@ -1,0 +1,61 @@
+# Confirmation Statement Mailer
+
+Search for a client company, check/fill in their email and name, review the
+templated reminder, and send it — without leaving the app or touching Outlook.
+
+## 1. Set up Supabase
+
+1. Create a new Supabase project.
+2. Open the SQL Editor and run everything in `supabase/schema.sql`. This
+   creates the `clients` table.
+3. Go to **Table Editor → clients → Insert → Import data from CSV**, and
+   upload `clients_import.csv` (346 clients from your spreadsheet — 121 of
+   them have no email yet; the app will flag those so you can fill them in
+   as you go).
+4. Go to **Project Settings → API** and copy the **Project URL** and
+   **anon public key** — you'll need these in step 3 below.
+
+## 2. Set up Resend (email sending)
+
+If you already have Resend set up for the payslip mailer, you can reuse the
+same account and verified domain — just create a new API key for this app
+(or reuse the existing one).
+
+1. In Resend, confirm `abacusconsultancy.co.uk` is a verified sending domain.
+2. Create an API key.
+
+## 3. Deploy to Cloudflare Pages
+
+1. Upload this folder to a new GitHub repo (same web-upload workflow you
+   already use).
+2. In Cloudflare Pages, create a new project connected to that repo.
+   - Build command: `npm run build`
+   - Build output directory: `dist`
+3. In the Pages project's **Settings → Environment variables**, add:
+   - `VITE_SUPABASE_URL` — from Supabase step 1.4
+   - `VITE_SUPABASE_ANON_KEY` — from Supabase step 1.4
+   - `RESEND_API_KEY` — from Resend step 2
+   - `SEND_FROM_ADDRESS` — e.g. `Roger <roger@abacusconsultancy.co.uk>`
+     (optional — defaults to this if not set)
+4. Redeploy.
+
+## Using it day to day
+
+1. A Companies House confirmation statement email lands in your inbox as
+   normal.
+2. Open the app, start typing the company name, and select it from the
+   dropdown.
+3. If the email (or their name) is missing, fill it in — it's saved back to
+   the client record automatically so you only ever do this once per client.
+4. Check the message (subject and body are both editable if you need to
+   tweak anything for that client), then click **Send to client**.
+5. The app records when you last sent this client a reminder, so you can
+   see at a glance who's been chased this cycle.
+
+## Notes
+
+- The `clients` table has RLS enabled but with an open policy, since the
+  anon key is only ever used by this app and never exposed publicly beyond
+  it — same model as your other internal apps.
+- The email is sent from `roger@abacusconsultancy.co.uk` via Resend, so it
+  should land looking like a normal email from you, not a no-reply address.
