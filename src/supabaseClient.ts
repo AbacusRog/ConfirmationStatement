@@ -12,5 +12,7 @@ export type Client = {
   email: string | null
   forename: string | null
   surname: string | null
+  confirmation_statement_date: string | null
+  due_date: string | null
   last_sent_at: string | null
 }

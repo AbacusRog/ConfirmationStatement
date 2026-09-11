@@ -37,3 +37,10 @@ create policy "allow all to anon on cs_mailer_clients" on cs_mailer_clients
   for all
   using (true)
   with check (true);
+
+-- Confirmation statement period-end date, and the statutory filing
+-- deadline computed automatically as 14 days after it.
+alter table cs_mailer_clients add column if not exists confirmation_statement_date date;
+alter table cs_mailer_clients add column if not exists due_date date
+  generated always as (confirmation_statement_date + 14) stored;
+

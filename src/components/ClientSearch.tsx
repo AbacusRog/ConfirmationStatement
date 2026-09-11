@@ -10,14 +10,17 @@ export default function ClientSearch({
   const [results, setResults] = useState<Client[]>([])
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [searchError, setSearchError] = useState('')
   const boxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (query.trim().length < 2) {
       setResults([])
+      setSearchError('')
       return
     }
     setLoading(true)
+    setSearchError('')
     const timeout = setTimeout(async () => {
       const { data, error } = await supabase
         .from('cs_mailer_clients')
@@ -25,7 +28,12 @@ export default function ClientSearch({
         .ilike('client_name', `%${query.trim()}%`)
         .order('client_name')
         .limit(20)
-      if (!error && data) setResults(data as Client[])
+      if (error) {
+        setSearchError(error.message)
+        setResults([])
+      } else {
+        setResults((data as Client[]) ?? [])
+      }
       setLoading(false)
     }, 250)
     return () => clearTimeout(timeout)
@@ -63,7 +71,12 @@ export default function ClientSearch({
           {loading && (
             <div className="px-3.5 py-3 text-sm text-slate-650">Searching…</div>
           )}
-          {!loading && results.length === 0 && (
+          {!loading && searchError && (
+            <div className="px-3.5 py-3 text-sm text-warn">
+              Couldn't reach the client list: {searchError}
+            </div>
+          )}
+          {!loading && !searchError && results.length === 0 && (
             <div className="px-3.5 py-3 text-sm text-slate-650">
               No match for "{query}". Check the spelling, or add this client
               in Supabase if they're new.

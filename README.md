@@ -52,12 +52,29 @@ same account and verified domain — just create a new API key for this app
    normal.
 2. Open the app, start typing the company name, and select it from the
    dropdown.
-3. If the email (or their name) is missing, fill it in — it's saved back to
-   the client record automatically so you only ever do this once per client.
+3. If the email, name, or confirmation statement date is missing, fill it
+   in — it's saved back to the client record automatically so you only
+   ever do this once per client. The filing due date (14 days after the
+   statement date) is calculated automatically.
 4. Check the message (subject and body are both editable if you need to
-   tweak anything for that client), then click **Send to client**.
+   tweak anything for that client), then click **Send to client**. The
+   email includes a highlighted notice box with the company name and both
+   dates, colour-coded red/amber/green by how soon it's due — same
+   convention as the company register.
 5. The app records when you last sent this client a reminder, so you can
    see at a glance who's been chased this cycle.
+
+## Updating the confirmation statement dates in bulk
+
+When you have a fresh export with confirmation statement dates for lots of
+clients at once (rather than adding them one at a time in the app):
+
+1. Re-run `supabase/schema.sql` first if you haven't already — it now adds
+   `confirmation_statement_date` and a `due_date` column that's calculated
+   automatically.
+2. Run `supabase/load_confirmation_dates.sql` in the SQL Editor — it walks
+   you through creating a staging table, importing your CSV into it, and
+   copying the dates across by matching client code.
 
 ## Notes
 

@@ -26,6 +26,40 @@ Regards
 Roger`
 }
 
+function addDays(dateStr: string, days: number) {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+function formatDate(dateStr: string) {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+// Matches the red/amber/green convention used in the company register:
+// red = due within 1 month, amber = due within 2 months, green = beyond that.
+function urgency(dueDateStr: string): 'red' | 'amber' | 'green' {
+  const due = new Date(dueDateStr + 'T00:00:00')
+  const now = new Date()
+  const oneMonth = new Date(now)
+  oneMonth.setMonth(oneMonth.getMonth() + 1)
+  const twoMonths = new Date(now)
+  twoMonths.setMonth(twoMonths.getMonth() + 2)
+  if (due <= oneMonth) return 'red'
+  if (due <= twoMonths) return 'amber'
+  return 'green'
+}
+
+const urgencyStyles = {
+  red: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700' },
+  amber: { bg: 'bg-warnbg', border: 'border-warn/40', text: 'text-warn' },
+  green: { bg: 'bg-accent-light', border: 'border-accent/30', text: 'text-accent-dark' },
+}
+
 export default function EmailPreview({
   client,
   onSent,
@@ -36,6 +70,7 @@ export default function EmailPreview({
   const [email, setEmail] = useState(client.email ?? '')
   const [forename, setForename] = useState(client.forename ?? '')
   const [surname, setSurname] = useState(client.surname ?? '')
+  const [statementDate, setStatementDate] = useState(client.confirmation_statement_date ?? '')
   const [subject, setSubject] = useState(
     `Confirmation Statement – ${client.client_name}`
   )
@@ -49,25 +84,32 @@ export default function EmailPreview({
     setEmail(client.email ?? '')
     setForename(client.forename ?? '')
     setSurname(client.surname ?? '')
+    setStatementDate(client.confirmation_statement_date ?? '')
     setSubject(`Confirmation Statement – ${client.client_name}`)
     setBody(buildBody(client.client_name, client.forename ?? ''))
     setStatus('idle')
   }, [client.id])
 
-  const missingDetails = !email.trim()
+  const dueDate = statementDate ? addDays(statementDate, 14) : ''
+  const missingEmail = !email.trim()
+  const missingDate = !statementDate
+  const canSend = !missingEmail && !missingDate
   const nameChanged =
     forename !== (client.forename ?? '') || surname !== (client.surname ?? '')
+  const dateChanged = statementDate !== (client.confirmation_statement_date ?? '')
+  const style = dueDate ? urgencyStyles[urgency(dueDate)] : urgencyStyles.green
 
   async function handleSend() {
-    if (!email.trim()) return
+    if (!canSend) return
     setSending(true)
     setErrorMsg('')
     try {
-      // Save any name/email additions back to the client record first
+      // Save any name/email/date additions back to the client record first
       const updates: Record<string, string | null> = {}
       if (email !== (client.email ?? '')) updates.email = email.trim()
       if (forename !== (client.forename ?? '')) updates.forename = forename.trim() || null
       if (surname !== (client.surname ?? '')) updates.surname = surname.trim() || null
+      if (dateChanged) updates.confirmation_statement_date = statementDate || null
 
       if (Object.keys(updates).length > 0) {
         const { error: updateError } = await supabase
@@ -80,7 +122,14 @@ export default function EmailPreview({
       const res = await fetch('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: email.trim(), subject, body }),
+        body: JSON.stringify({
+          to: email.trim(),
+          subject,
+          body,
+          companyName: client.client_name,
+          statementDate,
+          dueDate,
+        }),
       })
       if (!res.ok) {
         const text = await res.text()
@@ -118,7 +167,7 @@ export default function EmailPreview({
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@example.com"
               className={`w-full rounded-md border px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent transition-colors ${
-                missingDetails ? 'border-warn bg-warnbg' : 'border-line focus:border-accent'
+                missingEmail ? 'border-warn bg-warnbg' : 'border-line focus:border-accent'
               }`}
             />
           </div>
@@ -148,17 +197,58 @@ export default function EmailPreview({
           </div>
         </div>
 
-        {missingDetails && (
+        <div className="mt-3">
+          <label className="block text-xs font-medium text-slate-650 mb-1">
+            Confirmation statement period ends
+          </label>
+          <input
+            type="date"
+            value={statementDate}
+            onChange={(e) => setStatementDate(e.target.value)}
+            className={`rounded-md border px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent transition-colors ${
+              missingDate ? 'border-warn bg-warnbg' : 'border-line focus:border-accent'
+            }`}
+          />
+          {dueDate && (
+            <span className="ml-3 text-xs text-slate-650">
+              Filing due by {formatDate(dueDate)}
+            </span>
+          )}
+        </div>
+
+        {missingEmail && (
           <p className="mt-2 text-xs text-warn">
             No email on file for this client yet — add one above to send.
           </p>
         )}
-        {nameChanged && !missingDetails && (
+        {missingDate && (
+          <p className="mt-2 text-xs text-warn">
+            No confirmation statement date on file — add the period-end date
+            from the Companies House email to send.
+          </p>
+        )}
+        {(nameChanged || dateChanged) && !missingEmail && !missingDate && (
           <p className="mt-2 text-xs text-accent-dark">
-            Name changes will be saved to this client's record when you send.
+            Changes above will be saved to this client's record when you send.
           </p>
         )}
       </div>
+
+      {dueDate && (
+        <div className={`rounded-md border p-4 ${style.bg} ${style.border}`}>
+          <div className="text-xs font-medium text-slate-650 uppercase tracking-wide mb-1">
+            Notice included in the email
+          </div>
+          <div className="text-[15px] text-ink">
+            Confirmation statement for the period ending{' '}
+            <strong>{formatDate(statementDate)}</strong> is due for{' '}
+            <strong>{client.client_name}</strong>.
+          </div>
+          <div className={`mt-1 text-[15px] font-medium ${style.text}`}>
+            File by {formatDate(dueDate)}
+          </div>
+        </div>
+      )}
 
       <div className="rounded-md border border-line bg-white p-4">
         <label className="block text-xs font-medium text-slate-650 mb-1">
@@ -183,7 +273,7 @@ export default function EmailPreview({
       <div className="flex items-center gap-3">
         <button
           onClick={handleSend}
-          disabled={sending || missingDetails}
+          disabled={sending || !canSend}
           className="rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {sending ? 'Sending…' : 'Send to client'}

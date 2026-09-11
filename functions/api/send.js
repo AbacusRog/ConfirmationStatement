@@ -1,6 +1,128 @@
-// POST /api/send  { to, subject, body }
+// POST /api/send  { to, subject, body, companyName, statementDate, dueDate }
 // Sends via Resend using the RESEND_API_KEY environment variable
 // configured in the Cloudflare Pages project settings.
+//
+// statementDate / dueDate are ISO strings (YYYY-MM-DD). Both are optional —
+// if omitted, the email is sent without the notice box.
+
+const COLORS = {
+  ink: '#1C2430',
+  slate: '#425064',
+  accent: '#2F5D6B',
+  accentDark: '#204450',
+  accentLight: '#E4EEF0',
+  paper: '#FAF9F5',
+  line: '#DEDBD1',
+  red: { bg: '#FDECEC', border: '#F3C6C6', text: '#B3261E' },
+  amber: { bg: '#FBF0DF', border: '#EAD3AA', text: '#9A5B12' },
+  green: { bg: '#E4EEF0', border: '#C4D8DC', text: '#204450' },
+}
+
+function formatDate(iso) {
+  const d = new Date(iso + 'T00:00:00')
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+function urgency(dueIso) {
+  const due = new Date(dueIso + 'T00:00:00')
+  const now = new Date()
+  const oneMonth = new Date(now)
+  oneMonth.setMonth(oneMonth.getMonth() + 1)
+  const twoMonths = new Date(now)
+  twoMonths.setMonth(twoMonths.getMonth() + 2)
+  if (due <= oneMonth) return 'red'
+  if (due <= twoMonths) return 'amber'
+  return 'green'
+}
+
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function buildHtml({ body, companyName, statementDate, dueDate }) {
+  const paragraphs = body
+    .split('\n\n')
+    .map(
+      (para) =>
+        `<p style="margin:0 0 16px 0; font-family:Georgia,'Times New Roman',serif; font-size:15px; line-height:1.65; color:${COLORS.ink};">${escapeHtml(
+          para
+        ).replace(/\n/g, '<br>')}</p>`
+    )
+    .join('\n')
+
+  let noticeBlock = ''
+  if (statementDate && dueDate) {
+    const u = urgency(dueDate)
+    const c = COLORS[u]
+    noticeBlock = `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+      <tr>
+        <td style="background-color:${c.bg}; border:1px solid ${c.border}; border-radius:6px; padding:16px 18px;">
+          <div style="font-family:Arial,Helvetica,sans-serif; font-size:11px; letter-spacing:0.03em; color:${COLORS.slate}; margin-bottom:6px;">
+            CONFIRMATION STATEMENT
+          </div>
+          <div style="font-family:Georgia,'Times New Roman',serif; font-size:15px; color:${COLORS.ink}; line-height:1.5;">
+            The confirmation statement for the period ending <strong>${formatDate(
+              statementDate
+            )}</strong> is due for <strong>${escapeHtml(companyName)}</strong>.
+          </div>
+          <div style="font-family:Arial,Helvetica,sans-serif; font-size:15px; font-weight:bold; color:${c.text}; margin-top:8px;">
+            File by ${formatDate(dueDate)}
+          </div>
+        </td>
+      </tr>
+    </table>`
+  }
+
+  return `<!doctype html>
+<html>
+  <body style="margin:0; padding:0; background-color:${COLORS.paper};">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${COLORS.paper}; padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%; background-color:#FFFFFF; border:1px solid ${COLORS.line}; border-radius:8px; overflow:hidden;">
+            <tr>
+              <td style="background-color:${COLORS.accent}; height:5px; line-height:5px; font-size:0;">&nbsp;</td>
+            </tr>
+            <tr>
+              <td style="padding:28px 32px 8px 32px;">
+                <div style="font-family:Georgia,'Times New Roman',serif; font-size:19px; color:${COLORS.accentDark};">
+                  Abacus Consultancy
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:12px 32px 32px 32px;">
+                ${noticeBlock}
+                ${paragraphs}
+                <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 4px 0;">
+                  <tr>
+                    <td style="background-color:${COLORS.accent}; border-radius:6px;">
+                      <a href="https://square.link/u/UWw0m3xb" style="display:inline-block; padding:11px 22px; font-family:Arial,Helvetica,sans-serif; font-size:14px; font-weight:bold; color:#FFFFFF; text-decoration:none;">
+                        Pay filing fee by card — £54.00
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 32px 28px 32px; border-top:1px solid ${COLORS.line};">
+                <div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; color:${COLORS.slate};">
+                  Abacus Consultancy · roger@abacusconsultancy.co.uk
+                </div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+}
 
 export async function onRequestPost(context) {
   const { request, env } = context
@@ -12,15 +134,12 @@ export async function onRequestPost(context) {
     return new Response('Invalid JSON body', { status: 400 })
   }
 
-  const { to, subject, body } = payload
+  const { to, subject, body, companyName, statementDate, dueDate } = payload
   if (!to || !subject || !body) {
     return new Response('Missing to, subject, or body', { status: 400 })
   }
 
-  const html = body
-    .split('\n\n')
-    .map((para) => `<p>${para.replace(/\n/g, '<br>')}</p>`)
-    .join('\n')
+  const html = buildHtml({ body, companyName: companyName || '', statementDate, dueDate })
 
   const resendRes = await fetch('https://api.resend.com/emails', {
     method: 'POST',
