@@ -98,8 +98,11 @@ export default function EmailPreview({
   // so you don't have to update it yourself.
   useEffect(() => {
     const autoBody = buildBody(client.client_name, forename)
-    setBody((prev) => (prev === lastAutoBodyRef.current ? autoBody : prev))
-    lastAutoBodyRef.current = autoBody
+    setBody((prev) => {
+      if (prev !== lastAutoBodyRef.current) return prev // user has edited it — leave it alone
+      lastAutoBodyRef.current = autoBody
+      return autoBody
+    })
   }, [forename, client.client_name])
 
   const dueDate = statementDate ? addDays(statementDate, 14) : ''
