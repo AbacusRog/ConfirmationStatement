@@ -77,15 +77,6 @@ function buildHtml({ body, companyName, statementDate, dueDate, logoUrl }) {
     </table>`
   }
 
-  // The watermark is a low-opacity PNG baked in ahead of time (rather than
-  // relying on CSS opacity, which many email clients strip), shown as a
-  // centred background image behind the letter content. Clients that don't
-  // support background-image on table cells (older desktop Outlook) will
-  // just show a plain white background instead — a safe fallback.
-  const contentBg = logoUrl
-    ? `background-color:#FFFFFF; background-image:url('${logoUrl}'); background-repeat:no-repeat; background-position:center 40px;`
-    : `background-color:#FFFFFF;`
-
   return `<!doctype html>
 <html>
   <body style="margin:0; padding:0; background-color:${COLORS.paper};">
@@ -97,14 +88,16 @@ function buildHtml({ body, companyName, statementDate, dueDate, logoUrl }) {
               <td style="background-color:${COLORS.accent}; height:5px; line-height:5px; font-size:0;">&nbsp;</td>
             </tr>
             <tr>
-              <td style="padding:28px 32px 8px 32px;">
-                <div style="font-family:Georgia,'Times New Roman',serif; font-size:19px; color:${COLORS.accentDark};">
-                  Abacus Consultancy
-                </div>
+              <td style="padding:24px 32px 8px 32px;">
+                ${
+                  logoUrl
+                    ? `<img src="${logoUrl}" width="220" alt="Abacus Consultancy" style="display:block; border:0; max-width:220px; height:auto;">`
+                    : `<div style="font-family:Georgia,'Times New Roman',serif; font-size:19px; color:${COLORS.accentDark};">Abacus Consultancy</div>`
+                }
               </td>
             </tr>
             <tr>
-              <td style="${contentBg} padding:12px 32px 32px 32px;">
+              <td style="background-color:#FFFFFF; padding:12px 32px 32px 32px;">
                 ${noticeBlock}
                 ${paragraphs}
                 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 4px 0;">
@@ -148,7 +141,7 @@ export async function onRequestPost(context) {
     return new Response('Missing to, subject, or body', { status: 400 })
   }
 
-  const logoUrl = env.SITE_URL ? `${env.SITE_URL.replace(/\/$/, '')}/logo-watermark.png` : ''
+  const logoUrl = env.SITE_URL ? `${env.SITE_URL.replace(/\/$/, '')}/logo-header.jpg` : ''
 
   const html = buildHtml({
     body,

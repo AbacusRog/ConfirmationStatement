@@ -167,8 +167,33 @@ export default function EmailPreview({
     }
   }
 
+  const sendBar = (
+    <div className="flex items-center gap-3">
+      <button
+        onClick={handleSend}
+        disabled={sending || !canSend}
+        className="rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      >
+        {sending ? 'Sending…' : 'Send to client'}
+      </button>
+      {status === 'sent' && (
+        <span className="text-sm text-accent-dark">Sent to {email}.</span>
+      )}
+      {status === 'error' && (
+        <span className="text-sm text-warn">Couldn't send: {errorMsg}</span>
+      )}
+      {client.last_sent_at && status === 'idle' && (
+        <span className="text-sm text-slate-650">
+          Last sent {new Date(client.last_sent_at).toLocaleDateString('en-GB')}
+        </span>
+      )}
+    </div>
+  )
+
   return (
     <div className="mt-6 space-y-5">
+      {sendBar}
+
       <div className="rounded-md border border-line bg-white p-4">
         <div className="font-serif text-lg text-ink mb-3">{client.client_name}</div>
 
@@ -285,28 +310,7 @@ export default function EmailPreview({
         />
       </div>
 
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleSend}
-          disabled={sending || !canSend}
-          className="rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {sending ? 'Sending…' : 'Send to client'}
-        </button>
-        {status === 'sent' && (
-          <span className="text-sm text-accent-dark">
-            Sent to {email}.
-          </span>
-        )}
-        {status === 'error' && (
-          <span className="text-sm text-warn">Couldn't send: {errorMsg}</span>
-        )}
-        {client.last_sent_at && status === 'idle' && (
-          <span className="text-sm text-slate-650">
-            Last sent {new Date(client.last_sent_at).toLocaleDateString('en-GB')}
-          </span>
-        )}
-      </div>
+      {sendBar}
     </div>
   )
 }

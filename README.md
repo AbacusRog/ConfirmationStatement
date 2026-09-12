@@ -74,21 +74,20 @@ There's no "forgot password" flow built in — if you ever need to reset it,
 do that from the Supabase dashboard directly (Authentication → Users →
 select your user → reset password).
 
-## 5. Point the watermark at your deployed URL
+## 5. Point the logo at your deployed URL
 
-The confirmation statement emails now include your logo as a faint
-watermark behind the message. It's served as a static file from the app
-itself (`public/logo-watermark.png`), so it needs to know its own URL:
+The confirmation statement emails now show your logo in the header. It's
+served as a static file from the app itself (`public/logo-header.jpg`), so
+it needs to know its own URL:
 
 1. Deploy the app once (steps 1–4 above) and note the URL Cloudflare gives
    it, e.g. `https://cs-mailer-abc.pages.dev` (or your custom domain if
    you attach one).
 2. Set the `SITE_URL` environment variable (step 3 above) to that URL, with
    no trailing slash, and redeploy.
-3. Send yourself a test email to confirm the watermark shows up — some
-   email clients (older desktop Outlook in particular) don't support
-   background images on emails and will just show a plain white
-   background instead, which is an acceptable fallback.
+3. Send yourself a test email to confirm the logo shows up. If `SITE_URL`
+   isn't set, the email just falls back to showing "Abacus Consultancy" as
+   plain text instead — it won't show a broken image icon.
 
 ## Using it day to day
 
@@ -137,4 +136,7 @@ clients at once (rather than adding them one at a time in the app):
   isn't in the list yet, or click **Edit** next to any search result to
   correct their details — no need to go into Supabase for either.
 - The confirmation statement notice inside the email is centred, bold,
-  and the same size as the "Abacus Consultancy" heading above it.
+  and the same size as the logo/heading above it.
+- There's a **Send to client** button both above and below the message —
+  same action either way, just there so you don't have to scroll for a
+  long message.
