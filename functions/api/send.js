@@ -86,6 +86,24 @@ function buildHtml({ body, companyName, statementDate, dueDate, logoUrl }) {
     ? `background-color:#FFFFFF; background-image:url('${logoUrl}'); background-repeat:no-repeat; background-position:center 40px;`
     : `background-color:#FFFFFF;`
 
+  // Desktop Outlook (Windows) ignores CSS background-image entirely and
+  // needs Microsoft's own VML markup instead. This block is wrapped in
+  // Outlook-only conditional comments, so every other client just skips
+  // it and uses the CSS version above.
+  const outlookVmlOpen = logoUrl
+    ? `<!--[if gte mso 9]>
+    <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:600px;">
+      <v:fill type="frame" src="${logoUrl}" color="#FFFFFF" />
+      <v:textbox inset="0,0,0,0">
+    <![endif]-->`
+    : ''
+  const outlookVmlClose = logoUrl
+    ? `<!--[if gte mso 9]>
+      </v:textbox>
+    </v:rect>
+    <![endif]-->`
+    : ''
+
   return `<!doctype html>
 <html>
   <body style="margin:0; padding:0; background-color:${COLORS.paper};">
@@ -105,6 +123,7 @@ function buildHtml({ body, companyName, statementDate, dueDate, logoUrl }) {
             </tr>
             <tr>
               <td style="${contentBg} padding:12px 32px 32px 32px;">
+                ${outlookVmlOpen}
                 ${noticeBlock}
                 ${paragraphs}
                 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 4px 0;">
@@ -116,6 +135,7 @@ function buildHtml({ body, companyName, statementDate, dueDate, logoUrl }) {
                     </td>
                   </tr>
                 </table>
+                ${outlookVmlClose}
               </td>
             </tr>
             <tr>
