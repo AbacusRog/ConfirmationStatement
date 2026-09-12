@@ -28,15 +28,16 @@ create trigger cs_mailer_clients_updated_at
   before update on cs_mailer_clients
   for each row execute function cs_mailer_set_updated_at();
 
--- Row Level Security: single-user internal tool, so allow the anon key
--- (used only by your own app, never public) full access.
+-- Row Level Security: only signed-in sessions (i.e. you, logged into the
+-- app) may read or write. The anon key alone, without a login, gets nothing.
 alter table cs_mailer_clients enable row level security;
 
 drop policy if exists "allow all to anon on cs_mailer_clients" on cs_mailer_clients;
-create policy "allow all to anon on cs_mailer_clients" on cs_mailer_clients
+drop policy if exists "allow authenticated on cs_mailer_clients" on cs_mailer_clients;
+create policy "allow authenticated on cs_mailer_clients" on cs_mailer_clients
   for all
-  using (true)
-  with check (true);
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
 
 -- Confirmation statement period-end date, and the statutory filing
 -- deadline computed automatically as 14 days after it.

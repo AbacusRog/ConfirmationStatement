@@ -47,7 +47,48 @@ same account and verified domain — just create a new API key for this app
    - `BCC_ADDRESS` — e.g. `roger@abacusconsultancy.co.uk` (optional —
      every email sent also BCCs this address by default; set it if you
      want a different inbox copied instead)
+   - `SITE_URL` — the URL this app ends up deployed at once you know it,
+     e.g. `https://cs-mailer-abc.pages.dev` or your custom domain, with no
+     trailing slash. This is what makes the logo watermark load in emails —
+     see step 5 below.
 4. Redeploy.
+
+## 4. Set up your login
+
+The app is now login-gated, the same as your other internal tools — no
+one can see client data or send emails without signing in.
+
+1. In Supabase, go to **Authentication → Providers** and confirm **Email**
+   is enabled (it is by default).
+2. Go to **Authentication → Users → Add user**, and create an account for
+   yourself with your email and a password of your choice. Tick "Auto
+   Confirm User" if it's offered, so you don't need to click an email
+   confirmation link.
+3. Optional but recommended: go to **Authentication → Settings** and turn
+   **off** "Allow new users to sign up" — the app has no sign-up form
+   anyway, but this closes the door at the database level too, in case
+   anyone ever finds the Supabase URL directly.
+4. Open the deployed app and sign in with that email and password.
+
+There's no "forgot password" flow built in — if you ever need to reset it,
+do that from the Supabase dashboard directly (Authentication → Users →
+select your user → reset password).
+
+## 5. Point the watermark at your deployed URL
+
+The confirmation statement emails now include your logo as a faint
+watermark behind the message. It's served as a static file from the app
+itself (`public/logo-watermark.png`), so it needs to know its own URL:
+
+1. Deploy the app once (steps 1–4 above) and note the URL Cloudflare gives
+   it, e.g. `https://cs-mailer-abc.pages.dev` (or your custom domain if
+   you attach one).
+2. Set the `SITE_URL` environment variable (step 3 above) to that URL, with
+   no trailing slash, and redeploy.
+3. Send yourself a test email to confirm the watermark shows up — some
+   email clients (older desktop Outlook in particular) don't support
+   background images on emails and will just show a plain white
+   background instead, which is an acceptable fallback.
 
 ## Using it day to day
 
@@ -81,9 +122,9 @@ clients at once (rather than adding them one at a time in the app):
 
 ## Notes
 
-- The `cs_mailer_clients` table has RLS enabled but with an open policy,
-  since the anon key is only ever used by this app and never exposed
-  publicly beyond it — same model as your other internal apps.
+- The `cs_mailer_clients` table has RLS enabled, requiring a signed-in
+  session — the anon key alone (without logging in) can't read or write
+  anything, matching your other internal apps.
 - The email is sent from `roger@abacusconsultancy.co.uk` via Resend, so it
   should land looking like a normal email from you, not a no-reply address.
 - Every send is BCC'd to you automatically.
@@ -95,3 +136,5 @@ clients at once (rather than adding them one at a time in the app):
 - Use **+ New client** (next to the search box) to add a company that
   isn't in the list yet, or click **Edit** next to any search result to
   correct their details — no need to go into Supabase for either.
+- The confirmation statement notice inside the email is centred, bold,
+  and the same size as the "Abacus Consultancy" heading above it.
