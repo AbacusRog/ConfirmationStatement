@@ -20,6 +20,8 @@ export default function ClientForm({
   const [statementDate, setStatementDate] = useState(
     initial.confirmation_statement_date ?? ''
   )
+  const [companyNumber, setCompanyNumber] = useState(initial.company_number ?? '')
+  const [yearEndDate, setYearEndDate] = useState(initial.year_end_date ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -36,6 +38,8 @@ export default function ClientForm({
       forename: forename.trim() || null,
       surname: surname.trim() || null,
       confirmation_statement_date: statementDate || null,
+      company_number: companyNumber.trim() || null,
+      year_end_date: yearEndDate || null,
     }
     try {
       if (mode === 'add') {
@@ -65,7 +69,7 @@ export default function ClientForm({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
         <h2 className="font-serif text-lg text-ink mb-4">
           {mode === 'add' ? 'Add a new client' : 'Edit client'}
         </h2>
@@ -144,6 +148,40 @@ export default function ClientForm({
               onChange={(e) => setStatementDate(e.target.value)}
               className="rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
             />
+          </div>
+
+          <div className="border-t border-line pt-3">
+            <div className="text-xs font-medium text-slate-650 uppercase tracking-wide mb-2">
+              Year End
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-650 mb-1">
+                  Companies House number
+                </label>
+                <input
+                  value={companyNumber}
+                  onChange={(e) => setCompanyNumber(e.target.value.toUpperCase())}
+                  placeholder="e.g. 16702802"
+                  className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-650 mb-1">
+                  Year end date
+                </label>
+                <input
+                  type="date"
+                  value={yearEndDate}
+                  onChange={(e) => setYearEndDate(e.target.value)}
+                  className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                />
+              </div>
+            </div>
+            <p className="mt-1.5 text-xs text-slate-650">
+              Add the company number here (or match it from the Year End tab)
+              to enable syncing with Companies House.
+            </p>
           </div>
         </div>
 

@@ -4,9 +4,11 @@ import { supabase, Client } from './supabaseClient'
 import Login from './components/Login'
 import ClientSearch from './components/ClientSearch'
 import EmailPreview from './components/EmailPreview'
+import YearEndList from './components/YearEndList'
 
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
+  const [tab, setTab] = useState<'confirmation' | 'yearend'>('confirmation')
   const [selected, setSelected] = useState<Client | null>(null)
   const [key, setKey] = useState(0) // forces a fresh search after sending
 
@@ -26,11 +28,13 @@ export default function App() {
   return (
     <div className="min-h-screen bg-paper">
       <header className="border-b border-line bg-white">
-        <div className="max-w-2xl mx-auto px-6 py-5 flex items-center justify-between">
+        <div className="max-w-3xl mx-auto px-6 py-5 flex items-center justify-between">
           <div>
-            <h1 className="font-serif text-2xl text-ink">Confirmation Statement Mailer</h1>
+            <h1 className="font-serif text-2xl text-ink">Abacus Client Tasks</h1>
             <p className="text-sm text-slate-650 mt-1">
-              Find the client, check the details, send the reminder.
+              {tab === 'confirmation'
+                ? 'Find the client, check the details, send the reminder.'
+                : 'Track year end dates, sync with Companies House, and roll cycles forward.'}
             </p>
           </div>
           <button
@@ -40,24 +44,49 @@ export default function App() {
             Sign out
           </button>
         </div>
+        <div className="max-w-3xl mx-auto px-6 flex gap-1">
+          <button
+            onClick={() => setTab('confirmation')}
+            className={`px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              tab === 'confirmation'
+                ? 'border-accent text-accent-dark'
+                : 'border-transparent text-slate-650 hover:text-ink'
+            }`}
+          >
+            Confirmation Statements
+          </button>
+          <button
+            onClick={() => setTab('yearend')}
+            className={`px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              tab === 'yearend'
+                ? 'border-accent text-accent-dark'
+                : 'border-transparent text-slate-650 hover:text-ink'
+            }`}
+          >
+            Year End
+          </button>
+        </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-6 py-8">
-        <ClientSearch
-          key={key}
-          onSelect={(c) => setSelected(c)}
-        />
+      <main className="max-w-3xl mx-auto px-6 py-8">
+        {tab === 'confirmation' ? (
+          <>
+            <ClientSearch key={key} onSelect={(c) => setSelected(c)} />
 
-        {selected && (
-          <EmailPreview
-            client={selected}
-            onSent={() => {
-              setTimeout(() => {
-                setSelected(null)
-                setKey((k) => k + 1)
-              }, 1500)
-            }}
-          />
+            {selected && (
+              <EmailPreview
+                client={selected}
+                onSent={() => {
+                  setTimeout(() => {
+                    setSelected(null)
+                    setKey((k) => k + 1)
+                  }, 1500)
+                }}
+              />
+            )}
+          </>
+        ) : (
+          <YearEndList />
         )}
       </main>
     </div>

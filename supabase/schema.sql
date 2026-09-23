@@ -1,4 +1,8 @@
 -- Confirmation Statement Mailer: cs_mailer_clients table
+-- This file is safe to re-run — every statement uses "if not exists" or
+-- "or replace" so running it again after an update just applies whatever
+-- is new, without touching data you already have.
+
 create table if not exists cs_mailer_clients (
   id uuid primary key default gen_random_uuid(),
   client_code text,
@@ -28,6 +32,39 @@ create trigger cs_mailer_clients_updated_at
   before update on cs_mailer_clients
   for each row execute function cs_mailer_set_updated_at();
 
+-- Confirmation statement period-end date, and the statutory filing
+-- deadline computed automatically as 14 days after it.
+alter table cs_mailer_clients add column if not exists confirmation_statement_date date;
+alter table cs_mailer_clients add column if not exists due_date date
+  generated always as (confirmation_statement_date + 14) stored;
+
+-- Year End tracking: company number (for Companies House lookups), the
+-- year end date you enter or sync, the accounts filing deadline (9 months
+-- after year end, calculated automatically), what Companies House last
+-- reported as filed, when we last checked, and when this cycle was ticked
+-- off as done.
+alter table cs_mailer_clients add column if not exists company_number text;
+alter table cs_mailer_clients add column if not exists year_end_date date;
+alter table cs_mailer_clients add column if not exists accounts_due_date date
+  generated always as ((year_end_date + interval '9 months')::date) stored;
+alter table cs_mailer_clients add column if not exists accounts_last_filed_ch date;
+alter table cs_mailer_clients add column if not exists accounts_last_synced_at timestamptz;
+alter table cs_mailer_clients add column if not exists year_end_completed_at timestamptz;
+
+create index if not exists cs_mailer_clients_company_number_idx on cs_mailer_clients (company_number) where company_number is not null and company_number <> '';
+
+-- A simple history log so "Mark completed" can be undone, and so you have
+-- a record of when each year's accounts were actually signed off.
+create table if not exists cs_mailer_year_end_history (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references cs_mailer_clients(id) on delete cascade,
+  year_end_date date not null,
+  accounts_due_date date,
+  completed_at timestamptz not null default now()
+);
+
+create index if not exists cs_mailer_year_end_history_client_idx on cs_mailer_year_end_history (client_id);
+
 -- Row Level Security: only signed-in sessions (i.e. you, logged into the
 -- app) may read or write. The anon key alone, without a login, gets nothing.
 alter table cs_mailer_clients enable row level security;
@@ -39,9 +76,10 @@ create policy "allow authenticated on cs_mailer_clients" on cs_mailer_clients
   using (auth.role() = 'authenticated')
   with check (auth.role() = 'authenticated');
 
--- Confirmation statement period-end date, and the statutory filing
--- deadline computed automatically as 14 days after it.
-alter table cs_mailer_clients add column if not exists confirmation_statement_date date;
-alter table cs_mailer_clients add column if not exists due_date date
-  generated always as (confirmation_statement_date + 14) stored;
+alter table cs_mailer_year_end_history enable row level security;
 
+drop policy if exists "allow authenticated on cs_mailer_year_end_history" on cs_mailer_year_end_history;
+create policy "allow authenticated on cs_mailer_year_end_history" on cs_mailer_year_end_history
+  for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
