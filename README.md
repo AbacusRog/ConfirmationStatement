@@ -1,6 +1,6 @@
 # Abacus Client Tasks
 
-Three tools sharing one client list:
+Four tools sharing one client list:
 
 - **Confirmation Statements** — search a client, check their details,
   review the templated Companies House reminder, and send it.
@@ -11,10 +11,20 @@ Three tools sharing one client list:
 - **Tasks** — a compact, combined list of every upcoming deadline (company
   name, number, and due date only) across both confirmation statements and
   accounts, for a quick scan.
+- **Documents** — engagement letters and AML periodic reviews, for a
+  company, its directors (synced from Companies House), and any other
+  individual client. This used to be its own separate app
+  ("Client Document Generator") — see the **Merging in Documents**
+  section below if you're upgrading from that.
 
 Clients can be added by searching Companies House directly, and archived
 (rather than deleted) once they're no longer active — archived clients are
-hidden from all three tabs but can always be found and restored.
+hidden from all four tabs but can always be found and restored. Every
+client is either a **company** or an **individual** (set when you add
+them) — companies are the ones tracked on the Confirmation Statements,
+Year End and Tasks tabs; individuals exist purely so the Documents tab has
+somewhere to keep personal-tax clients and anyone else who needs a letter
+but isn't a company in their own right.
 
 ## 1. Set up Supabase
 
@@ -170,6 +180,71 @@ nothing is ever permanently removed.
   if something rolled forward that shouldn't have, correct the year end
   date by hand via Edit.
 
+## Directors
+
+On the Year End tab, click **Directors** under any client with a company
+number to see who's on file, and **Sync from Companies House** to pull the
+current officers list — name, role, appointment date, and (once
+resigned) their resignation date. Re-syncing updates existing directors
+rather than duplicating them, matched on Companies House's own appointment
+id for that person at that company.
+
+Directors are stored in their own table, keyed on the **company number**
+rather than the client record — so once the engagement letter tool is
+merged into this app, the same director data (and any future app that
+knows a company number) can use it without a separate import.
+
+## Using the Documents tab
+
+Generates the same engagement letter and AML periodic review PDFs as
+before, now against this app's own client list instead of a separate one.
+
+1. **Company** — search for and pick the company. If it has a company
+   number, its active directors (synced from Companies House — see
+   Directors, above) are loaded automatically as a checklist; untick any
+   who shouldn't get a letter this time. Click **Sync from Companies
+   House** here if the list looks out of date.
+2. Companies House's officer address is sometimes a service address
+   rather than where the director actually wants post — click **Edit
+   address** next to any director to override what prints on their
+   letter. This is stored separately from the synced Companies House data,
+   so it isn't lost or overwritten by the next sync.
+3. **Individuals** — search for and add any other individual client (a
+   personal tax client, a spouse, anyone not picked up as a Companies
+   House officer). Use **+ New client** in either section to add someone
+   who isn't in the list yet.
+4. Tick **Engagement letter** and/or **AML periodic review** (the AML
+   review only ever generates for the company, never for directors or
+   individuals), set the reviewer name, and **Generate & download**.
+   Every selected person/company gets their own PDF(s), downloaded
+   straight to your computer.
+
+A client's postal address (used on both documents) is set via **Edit** on
+that client — see the "Postal address" section of the client form, which
+applies to both companies and individuals.
+
+## Merging in Documents
+
+If you're upgrading from the old standalone "Client Document Generator"
+app, its client data lived in `doc_generator_clients` in the same
+Supabase project. Run `supabase/migrate_doc_generator.sql` once (after
+`schema.sql`) to bring it across:
+
+- Clients that already exist here (matched by client code) get their
+  address, type and contact number filled in from the old table — nothing
+  already on file is overwritten.
+- Clients that only existed in the old table (mostly individuals) are
+  added as new clients here, kind set from their old "type" field.
+- The old app's "link this director to this company" table is **not**
+  migrated — that manual step is retired in favour of syncing directors
+  straight from Companies House (see Directors, above). Re-sync each
+  company once, and its real officer list takes over.
+
+Once you've checked everything looks right in the app, the migration
+script's final comment has the two `drop table` statements to retire the
+old `doc_generator_*` tables — run those (or just leave the old app
+deployed a little longer as a fallback) whenever you're ready.
+
 ## Bulk-loading data
 
 If you have a spreadsheet with confirmation statement dates, company
@@ -206,3 +281,6 @@ staging table via Table Editor in between.
   when it happens so you're not caught out.
 - `CH_API_KEY` is used server-side only (in the Cloudflare Pages
   Functions) — it's never sent to the browser.
+- The Documents tab's PDF generation runs entirely in your browser (no new
+  server-side dependency or environment variable) — the letter templates
+  and the fillable AML PDF ship inside the app itself.

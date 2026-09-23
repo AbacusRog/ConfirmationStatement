@@ -29,4 +29,35 @@ export type Client = {
   archived_at: string | null
   archived_reason: string | null
   company_status: string | null // last status Companies House reported
+
+  // Documents (engagement letters / AML review) — every client, company or
+  // individual, lives in this same table; client_kind tells them apart.
+  client_kind: 'company' | 'individual'
+  client_type: string | null // free text, e.g. "Limited Company (By Shares)" or "Sole Trader"
+  addr1: string | null
+  addr2: string | null
+  town: string | null
+  county: string | null
+  postcode: string | null
+  contact_number: string | null
+}
+
+export type Director = {
+  id: string
+  company_number: string
+  client_id: string | null
+  ch_appointment_id: string | null
+  full_name: string
+  officer_role: string | null
+  appointed_on: string | null
+  resigned_on: string | null
+  nationality: string | null
+  occupation: string | null
+  date_of_birth_month: number | null
+  date_of_birth_year: number | null
+  address: string | null // Companies House's own officer address, refreshed on every sync
+  letter_address: string | null // your override for what prints on a letter — falls back to "address" when blank
+  last_synced_at: string | null
+  created_at: string
+  updated_at: string
 }

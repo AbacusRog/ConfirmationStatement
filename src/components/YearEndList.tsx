@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase, Client } from '../supabaseClient'
 import CompanyMatch from './CompanyMatch'
 import ArchivedClients from './ArchivedClients'
+import DirectorsPanel from './DirectorsPanel'
 
 function formatDate(dateStr: string | null) {
   if (!dateStr) return '—'
@@ -64,6 +65,7 @@ export default function YearEndList() {
   const [syncError, setSyncError] = useState('')
   const [editingYearEnd, setEditingYearEnd] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
+  const [directorsOpenId, setDirectorsOpenId] = useState<string | null>(null)
   const [checkingAll, setCheckingAll] = useState(false)
   const [checkAllProgress, setCheckAllProgress] = useState<{ done: number; total: number } | null>(
     null
@@ -89,6 +91,7 @@ export default function YearEndList() {
       .from('cs_mailer_clients')
       .select('*')
       .eq('archived', false)
+      .eq('client_kind', 'company')
       .order('accounts_due_date', { ascending: true, nullsFirst: false })
       .order('client_name', { ascending: true })
     if (error) {
@@ -571,10 +574,22 @@ export default function YearEndList() {
                 )}
 
                 <div className="mt-3 flex items-center justify-between">
-                  <div className="text-xs text-slate-650">
-                    {client.accounts_last_synced_at
-                      ? `Last synced ${new Date(client.accounts_last_synced_at).toLocaleDateString('en-GB')}`
-                      : 'Never synced'}
+                  <div className="flex items-center gap-3">
+                    <div className="text-xs text-slate-650">
+                      {client.accounts_last_synced_at
+                        ? `Last synced ${new Date(client.accounts_last_synced_at).toLocaleDateString('en-GB')}`
+                        : 'Never synced'}
+                    </div>
+                    {client.company_number && (
+                      <button
+                        onClick={() =>
+                          setDirectorsOpenId(directorsOpenId === client.id ? null : client.id)
+                        }
+                        className="text-xs font-medium text-slate-650 hover:text-accent-dark transition-colors"
+                      >
+                        {directorsOpenId === client.id ? 'Hide directors' : 'Directors'}
+                      </button>
+                    )}
                   </div>
                   <button
                     onClick={() => handleMarkCompleted(client)}
@@ -584,6 +599,10 @@ export default function YearEndList() {
                     Mark completed → roll to next year
                   </button>
                 </div>
+
+                {directorsOpenId === client.id && client.company_number && (
+                  <DirectorsPanel clientId={client.id} companyNumber={client.company_number} />
+                )}
               </div>
             )
           })}

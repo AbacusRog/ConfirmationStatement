@@ -34,6 +34,7 @@ export default function ClientSearch({
         .from('cs_mailer_clients')
         .select('*')
         .eq('archived', false)
+        .eq('client_kind', 'company')
         .ilike('client_name', `%${query.trim()}%`)
         .order('client_name')
         .limit(20)

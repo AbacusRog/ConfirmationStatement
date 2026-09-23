@@ -14,6 +14,9 @@ export default function ClientForm({
   onCancel: () => void
   onArchived?: (clientId: string) => void
 }) {
+  const [clientKind, setClientKind] = useState<'company' | 'individual'>(
+    initial.client_kind ?? 'company'
+  )
   const [clientCode, setClientCode] = useState(initial.client_code ?? '')
   const [clientName, setClientName] = useState(initial.client_name ?? '')
   const [email, setEmail] = useState(initial.email ?? '')
@@ -25,6 +28,13 @@ export default function ClientForm({
   const [companyNumber, setCompanyNumber] = useState(initial.company_number ?? '')
   const [yearEndDate, setYearEndDate] = useState(initial.year_end_date ?? '')
   const [companyStatus, setCompanyStatus] = useState(initial.company_status ?? '')
+  const [clientType, setClientType] = useState(initial.client_type ?? '')
+  const [addr1, setAddr1] = useState(initial.addr1 ?? '')
+  const [addr2, setAddr2] = useState(initial.addr2 ?? '')
+  const [town, setTown] = useState(initial.town ?? '')
+  const [county, setCounty] = useState(initial.county ?? '')
+  const [postcode, setPostcode] = useState(initial.postcode ?? '')
+  const [contactNumber, setContactNumber] = useState(initial.contact_number ?? '')
   const [saving, setSaving] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [error, setError] = useState('')
@@ -103,15 +113,23 @@ export default function ClientForm({
     setSaving(true)
     setError('')
     const record = {
+      client_kind: clientKind,
       client_code: clientCode.trim() || null,
       client_name: clientName.trim(),
       email: email.trim() || null,
       forename: forename.trim() || null,
       surname: surname.trim() || null,
-      confirmation_statement_date: statementDate || null,
-      company_number: companyNumber.trim() || null,
-      year_end_date: yearEndDate || null,
-      company_status: companyStatus.trim() || null,
+      confirmation_statement_date: clientKind === 'company' ? statementDate || null : null,
+      company_number: clientKind === 'company' ? companyNumber.trim() || null : null,
+      year_end_date: clientKind === 'company' ? yearEndDate || null : null,
+      company_status: clientKind === 'company' ? companyStatus.trim() || null : null,
+      client_type: clientType.trim() || null,
+      addr1: addr1.trim() || null,
+      addr2: addr2.trim() || null,
+      town: town.trim() || null,
+      county: county.trim() || null,
+      postcode: postcode.trim() || null,
+      contact_number: contactNumber.trim() || null,
     }
     try {
       if (mode === 'add') {
@@ -147,14 +165,29 @@ export default function ClientForm({
         </h2>
 
         <div className="space-y-3">
+          <div className="flex rounded-md border border-line bg-paper p-0.5 w-fit">
+            {(['company', 'individual'] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setClientKind(k)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-[5px] transition-colors ${
+                  clientKind === k ? 'bg-accent text-white' : 'text-slate-650 hover:text-ink'
+                }`}
+              >
+                {k === 'company' ? 'Company' : 'Individual'}
+              </button>
+            ))}
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-slate-650 mb-1">
-              Company name
+              {clientKind === 'company' ? 'Company name' : 'Full name'}
             </label>
             <input
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
-              placeholder="Company name"
+              placeholder={clientKind === 'company' ? 'Company name' : 'Full name'}
               autoFocus
               className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
             />
@@ -210,6 +243,7 @@ export default function ClientForm({
             </div>
           </div>
 
+          {clientKind === 'company' && (
           <div>
             <label className="block text-xs font-medium text-slate-650 mb-1">
               Confirmation statement period ends
@@ -221,7 +255,66 @@ export default function ClientForm({
               className="rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
             />
           </div>
+          )}
 
+          <div className="border-t border-line pt-3">
+            <div className="text-xs font-medium text-slate-650 uppercase tracking-wide mb-2">
+              Postal address
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-2">
+              <input
+                value={clientType}
+                onChange={(e) => setClientType(e.target.value)}
+                placeholder={
+                  clientKind === 'company' ? 'Client type, e.g. Limited Company' : 'e.g. Sole Trader'
+                }
+                className="rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+              />
+              <input
+                value={contactNumber}
+                onChange={(e) => setContactNumber(e.target.value)}
+                placeholder="Contact number"
+                className="rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+              />
+            </div>
+            <input
+              value={addr1}
+              onChange={(e) => setAddr1(e.target.value)}
+              placeholder="Address line 1"
+              className="w-full mb-2 rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+            />
+            <input
+              value={addr2}
+              onChange={(e) => setAddr2(e.target.value)}
+              placeholder="Address line 2"
+              className="w-full mb-2 rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+            />
+            <div className="grid grid-cols-3 gap-2">
+              <input
+                value={town}
+                onChange={(e) => setTown(e.target.value)}
+                placeholder="Town"
+                className="rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+              />
+              <input
+                value={county}
+                onChange={(e) => setCounty(e.target.value)}
+                placeholder="County"
+                className="rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+              />
+              <input
+                value={postcode}
+                onChange={(e) => setPostcode(e.target.value)}
+                placeholder="Postcode"
+                className="rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+              />
+            </div>
+            <p className="mt-1.5 text-xs text-slate-650">
+              Used on the Documents tab for engagement letters and AML reviews.
+            </p>
+          </div>
+
+          {clientKind === 'company' && (
           <div className="border-t border-line pt-3">
             <div className="text-xs font-medium text-slate-650 uppercase tracking-wide mb-2">
               Year End
@@ -309,6 +402,7 @@ export default function ClientForm({
               </div>
             )}
           </div>
+          )}
         </div>
 
         {error && <p className="mt-3 text-xs text-warn">{error}</p>}

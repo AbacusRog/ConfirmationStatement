@@ -61,6 +61,7 @@ export default function TasksList() {
         .from('cs_mailer_clients')
         .select('*')
         .eq('archived', false)
+        .eq('client_kind', 'company')
       if (loadError) {
         setError(loadError.message)
         setLoading(false)
