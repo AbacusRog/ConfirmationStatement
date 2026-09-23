@@ -49,6 +49,9 @@ export default function TasksList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
+  const [kindFilter, setKindFilter] = useState<'all' | 'Confirmation statement' | 'Accounts'>(
+    'all'
+  )
 
   useEffect(() => {
     async function load() {
@@ -92,19 +95,44 @@ export default function TasksList() {
     load()
   }, [])
 
-  const filtered = query.trim()
-    ? tasks.filter((t) => t.clientName.toLowerCase().includes(query.trim().toLowerCase()))
-    : tasks
+  const filtered = tasks
+    .filter((t) => kindFilter === 'all' || t.kind === kindFilter)
+    .filter((t) =>
+      query.trim() ? t.clientName.toLowerCase().includes(query.trim().toLowerCase()) : true
+    )
+
+  const filterOptions: { value: 'all' | 'Confirmation statement' | 'Accounts'; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'Confirmation statement', label: 'Confirmation statements' },
+    { value: 'Accounts', label: 'Accounts' },
+  ]
 
   return (
     <div>
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Filter by company name…"
-        className="w-full rounded-md border border-line bg-white px-3.5 py-2.5 text-[15px] outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors mb-4"
-      />
+      <div className="flex items-center gap-3 mb-4">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter by company name…"
+          className="flex-1 rounded-md border border-line bg-white px-3.5 py-2.5 text-[15px] outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+        />
+        <div className="flex shrink-0 rounded-md border border-line bg-white p-0.5">
+          {filterOptions.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setKindFilter(opt.value)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-[5px] transition-colors ${
+                kindFilter === opt.value
+                  ? 'bg-accent text-white'
+                  : 'text-slate-650 hover:text-ink'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {loading && <div className="text-sm text-slate-650">Loading tasks…</div>}
       {error && <div className="text-sm text-warn mb-3">Couldn't load tasks: {error}</div>}

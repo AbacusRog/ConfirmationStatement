@@ -125,7 +125,9 @@ A single, dense list of every client with an outstanding confirmation
 statement or accounts deadline, showing just the company name, its
 Companies House number, and the due date — with the same traffic-light dot
 as the other tabs. A client with both types of deadline outstanding gets a
-row for each. Archived clients never appear here.
+row for each. Use the **All / Confirmation statements / Accounts** filter
+above the list to narrow it to one type. Archived clients never appear
+here.
 
 ## Adding clients
 
