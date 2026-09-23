@@ -159,8 +159,16 @@ nothing is ever permanently removed.
     live filing obligations, so they're never archived automatically;
   - the confirmation statement date is refreshed from Companies House's
     own records, so a statement that's already been filed (including
-    ones filed outside this app) stops showing as due.
-  A summary banner shows what changed once it's done.
+    ones filed outside this app) stops showing as due;
+  - if Companies House's last-filed accounts date has caught up to the
+    year end you have on file, that means the accounts for the current
+    cycle are already filed — it's logged to history exactly like a
+    manual "Mark completed" and the year end rolls forward automatically,
+    so it drops off as due.
+  A summary banner shows what changed once it's done. Unlike "Mark
+  completed" on a single client, this bulk pass doesn't offer an Undo —
+  if something rolled forward that shouldn't have, correct the year end
+  date by hand via Edit.
 
 ## Bulk-loading data
 

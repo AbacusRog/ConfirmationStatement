@@ -72,6 +72,7 @@ export default function YearEndList() {
     archived: string[]
     flagged: { name: string; status: string }[]
     statementsUpdated: number
+    accountsRolled: string[]
   } | null>(null)
   const [undoBanner, setUndoBanner] = useState<{
     clientId: string
@@ -211,6 +212,7 @@ export default function YearEndList() {
     setCheckAllProgress({ done: 0, total: withNumbers.length })
     const archivedNames: string[] = []
     const flagged: { name: string; status: string }[] = []
+    const accountsRolled: string[] = []
     let statementsUpdated = 0
 
     for (const client of withNumbers) {
@@ -248,6 +250,29 @@ export default function YearEndList() {
               updates.confirmation_statement_date = data.confirmationStatementNextMadeUpTo
               statementsUpdated++
             }
+
+            // Accounts filed for the current cycle: Companies House's last
+            // filed date has caught up to (or passed) the year end we have
+            // on file. Log it the same way "Mark completed" does, and roll
+            // the year end forward automatically so it drops off as due.
+            if (
+              client.year_end_date &&
+              data.lastAccountsFiledDate &&
+              data.lastAccountsFiledDate >= client.year_end_date &&
+              data.lastAccountsFiledDate !== client.accounts_last_filed_ch
+            ) {
+              await supabase.from('cs_mailer_year_end_history').insert({
+                client_id: client.id,
+                year_end_date: client.year_end_date,
+                accounts_due_date: client.accounts_due_date,
+              })
+              updates.year_end_date =
+                data.nextYearEndDate || addYears(client.year_end_date, 1)
+              updates.accounts_last_filed_ch = data.lastAccountsFiledDate
+              updates.year_end_completed_at = null
+              accountsRolled.push(client.client_name)
+            }
+
             await supabase.from('cs_mailer_clients').update(updates).eq('id', client.id)
 
             if (status && status !== 'active') {
@@ -261,7 +286,7 @@ export default function YearEndList() {
       setCheckAllProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev))
     }
 
-    setCheckAllSummary({ archived: archivedNames, flagged, statementsUpdated })
+    setCheckAllSummary({ archived: archivedNames, flagged, statementsUpdated, accountsRolled })
     setCheckingAll(false)
     setCheckAllProgress(null)
     loadClients()
@@ -300,7 +325,8 @@ export default function YearEndList() {
             <div className="text-accent-dark space-y-1">
               {checkAllSummary.archived.length === 0 &&
                 checkAllSummary.flagged.length === 0 &&
-                checkAllSummary.statementsUpdated === 0 && (
+                checkAllSummary.statementsUpdated === 0 &&
+                checkAllSummary.accountsRolled.length === 0 && (
                   <div>No changes — everything checked is up to date.</div>
                 )}
               {checkAllSummary.statementsUpdated > 0 && (
@@ -309,6 +335,12 @@ export default function YearEndList() {
                   <strong>{checkAllSummary.statementsUpdated}</strong>{' '}
                   {checkAllSummary.statementsUpdated === 1 ? 'client' : 'clients'} from Companies
                   House.
+                </div>
+              )}
+              {checkAllSummary.accountsRolled.length > 0 && (
+                <div>
+                  Accounts already filed — rolled to next year:{' '}
+                  <strong>{checkAllSummary.accountsRolled.join(', ')}</strong>
                 </div>
               )}
               {checkAllSummary.archived.length > 0 && (
