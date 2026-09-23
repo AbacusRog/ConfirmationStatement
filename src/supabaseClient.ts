@@ -23,4 +23,10 @@ export type Client = {
   accounts_last_filed_ch: string | null // last filed date reported by Companies House
   accounts_last_synced_at: string | null // when we last checked Companies House
   year_end_completed_at: string | null // set when this cycle is ticked off
+
+  // Archiving
+  archived: boolean
+  archived_at: string | null
+  archived_reason: string | null
+  company_status: string | null // last status Companies House reported
 }

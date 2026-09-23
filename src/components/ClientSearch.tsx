@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase, Client } from '../supabaseClient'
 import ClientForm from './ClientForm'
+import NewClientFromCH from './NewClientFromCH'
+import ArchivedClients from './ArchivedClients'
 
 export default function ClientSearch({
   onSelect,
@@ -15,6 +17,8 @@ export default function ClientSearch({
   const [form, setForm] = useState<
     { mode: 'add'; initial: Partial<Client> } | { mode: 'edit'; initial: Client } | null
   >(null)
+  const [addingFromCH, setAddingFromCH] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -29,6 +33,7 @@ export default function ClientSearch({
       const { data, error } = await supabase
         .from('cs_mailer_clients')
         .select('*')
+        .eq('archived', false)
         .ilike('client_name', `%${query.trim()}%`)
         .order('client_name')
         .limit(20)
@@ -59,12 +64,26 @@ export default function ClientSearch({
         <label className="block text-sm font-medium text-slate-650">
           Find the client company
         </label>
-        <button
-          onClick={() => setForm({ mode: 'add', initial: {} })}
-          className="text-sm font-medium text-accent hover:text-accent-dark transition-colors"
-        >
-          + New client
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowArchived(true)}
+            className="text-sm font-medium text-slate-650 hover:text-accent-dark transition-colors"
+          >
+            Archived clients
+          </button>
+          <button
+            onClick={() => setAddingFromCH(true)}
+            className="text-sm font-medium text-accent hover:text-accent-dark transition-colors"
+          >
+            + From Companies House
+          </button>
+          <button
+            onClick={() => setForm({ mode: 'add', initial: {} })}
+            className="text-sm font-medium text-accent hover:text-accent-dark transition-colors"
+          >
+            + New client
+          </button>
+        </div>
       </div>
       <input
         type="text"
@@ -149,8 +168,25 @@ export default function ClientSearch({
             onSelect(client)
             setQuery(client.client_name)
           }}
+          onArchived={() => {
+            setForm(null)
+            setResults((prev) => prev.filter((c) => c.id !== (form as { initial: Client }).initial.id))
+            setQuery('')
+          }}
         />
       )}
+
+      {addingFromCH && (
+        <NewClientFromCH
+          onCancel={() => setAddingFromCH(false)}
+          onCreated={(client) => {
+            setAddingFromCH(false)
+            setForm({ mode: 'edit', initial: client })
+          }}
+        />
+      )}
+
+      {showArchived && <ArchivedClients onClose={() => setShowArchived(false)} />}
     </div>
   )
 }

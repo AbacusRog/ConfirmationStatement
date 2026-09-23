@@ -5,10 +5,11 @@ import Login from './components/Login'
 import ClientSearch from './components/ClientSearch'
 import EmailPreview from './components/EmailPreview'
 import YearEndList from './components/YearEndList'
+import TasksList from './components/TasksList'
 
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
-  const [tab, setTab] = useState<'confirmation' | 'yearend'>('confirmation')
+  const [tab, setTab] = useState<'confirmation' | 'yearend' | 'tasks'>('confirmation')
   const [selected, setSelected] = useState<Client | null>(null)
   const [key, setKey] = useState(0) // forces a fresh search after sending
 
@@ -34,7 +35,9 @@ export default function App() {
             <p className="text-sm text-slate-650 mt-1">
               {tab === 'confirmation'
                 ? 'Find the client, check the details, send the reminder.'
-                : 'Track year end dates, sync with Companies House, and roll cycles forward.'}
+                : tab === 'yearend'
+                ? 'Track year end dates, sync with Companies House, and roll cycles forward.'
+                : 'Every upcoming deadline, at a glance.'}
             </p>
           </div>
           <button
@@ -65,6 +68,16 @@ export default function App() {
           >
             Year End
           </button>
+          <button
+            onClick={() => setTab('tasks')}
+            className={`px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              tab === 'tasks'
+                ? 'border-accent text-accent-dark'
+                : 'border-transparent text-slate-650 hover:text-ink'
+            }`}
+          >
+            Tasks
+          </button>
         </div>
       </header>
 
@@ -85,8 +98,10 @@ export default function App() {
               />
             )}
           </>
-        ) : (
+        ) : tab === 'yearend' ? (
           <YearEndList />
+        ) : (
+          <TasksList />
         )}
       </main>
     </div>

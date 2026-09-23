@@ -11,10 +11,12 @@ type ChResult = {
 export default function CompanyMatch({
   initialQuery,
   onSelect,
+  onSelectFull,
   onCancel,
 }: {
   initialQuery: string
   onSelect: (companyNumber: string) => void
+  onSelectFull?: (companyNumber: string, title: string) => void
   onCancel: () => void
 }) {
   const [query, setQuery] = useState(initialQuery)
@@ -79,7 +81,9 @@ export default function CompanyMatch({
             results.map((r) => (
               <button
                 key={r.company_number}
-                onClick={() => onSelect(r.company_number)}
+                onClick={() =>
+                  onSelectFull ? onSelectFull(r.company_number, r.title) : onSelect(r.company_number)
+                }
                 className="w-full text-left px-3 py-2.5 rounded-md hover:bg-accent-light transition-colors border-b border-line last:border-0"
               >
                 <div className="text-[15px] text-ink">{r.title}</div>

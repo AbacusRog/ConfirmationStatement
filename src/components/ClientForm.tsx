@@ -6,11 +6,13 @@ export default function ClientForm({
   initial,
   onSaved,
   onCancel,
+  onArchived,
 }: {
   mode: 'add' | 'edit'
   initial: Partial<Client>
   onSaved: (client: Client) => void
   onCancel: () => void
+  onArchived?: (clientId: string) => void
 }) {
   const [clientCode, setClientCode] = useState(initial.client_code ?? '')
   const [clientName, setClientName] = useState(initial.client_name ?? '')
@@ -23,9 +25,28 @@ export default function ClientForm({
   const [companyNumber, setCompanyNumber] = useState(initial.company_number ?? '')
   const [yearEndDate, setYearEndDate] = useState(initial.year_end_date ?? '')
   const [saving, setSaving] = useState(false)
+  const [archiving, setArchiving] = useState(false)
   const [error, setError] = useState('')
 
   const canSave = clientName.trim().length > 0
+
+  async function handleArchive() {
+    if (mode !== 'edit' || !initial.id) return
+    if (!confirm(`Archive ${initial.client_name}? You can restore it later from "Archived clients".`))
+      return
+    setArchiving(true)
+    setError('')
+    const { error: archiveError } = await supabase
+      .from('cs_mailer_clients')
+      .update({ archived: true, archived_at: new Date().toISOString(), archived_reason: 'manual' })
+      .eq('id', initial.id)
+    if (archiveError) {
+      setError(archiveError.message)
+      setArchiving(false)
+    } else {
+      onArchived?.(initial.id)
+    }
+  }
 
   async function handleSave() {
     if (!canSave) return
@@ -187,20 +208,33 @@ export default function ClientForm({
 
         {error && <p className="mt-3 text-xs text-warn">{error}</p>}
 
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <button
-            onClick={onCancel}
-            className="rounded-md px-4 py-2 text-sm font-medium text-slate-650 hover:bg-paper transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !canSave}
-            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {saving ? 'Saving…' : mode === 'add' ? 'Add client' : 'Save changes'}
-          </button>
+        <div className="mt-5 flex items-center justify-between gap-2">
+          <div>
+            {mode === 'edit' && (
+              <button
+                onClick={handleArchive}
+                disabled={archiving}
+                className="text-sm font-medium text-warn hover:underline disabled:opacity-40 transition-colors"
+              >
+                {archiving ? 'Archiving…' : 'Archive client'}
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onCancel}
+              className="rounded-md px-4 py-2 text-sm font-medium text-slate-650 hover:bg-paper transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || !canSave}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {saving ? 'Saving…' : mode === 'add' ? 'Add client' : 'Save changes'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

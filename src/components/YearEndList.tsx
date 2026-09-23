@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase, Client } from '../supabaseClient'
 import CompanyMatch from './CompanyMatch'
+import ArchivedClients from './ArchivedClients'
 
 function formatDate(dateStr: string | null) {
   if (!dateStr) return '—'
@@ -61,6 +62,12 @@ export default function YearEndList() {
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null)
   const [syncError, setSyncError] = useState('')
   const [editingYearEnd, setEditingYearEnd] = useState<string | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
+  const [checkingDissolved, setCheckingDissolved] = useState(false)
+  const [dissolvedSummary, setDissolvedSummary] = useState<{
+    archived: string[]
+    flagged: { name: string; status: string }[]
+  } | null>(null)
   const [undoBanner, setUndoBanner] = useState<{
     clientId: string
     clientName: string
@@ -75,6 +82,7 @@ export default function YearEndList() {
     const { data, error } = await supabase
       .from('cs_mailer_clients')
       .select('*')
+      .eq('archived', false)
       .order('accounts_due_date', { ascending: true, nullsFirst: false })
       .order('client_name', { ascending: true })
     if (error) {
@@ -180,6 +188,60 @@ export default function YearEndList() {
     })
   }
 
+  // Loops every client with a company number through Companies House and
+  // auto-archives the ones reported as exactly "dissolved" — the one
+  // status that unambiguously means there's nothing left to file for.
+  // Anything else unusual (liquidation, administration, receivership,
+  // voluntary arrangement, etc.) is only flagged for you to look at, since
+  // those companies can still have live filing obligations.
+  async function handleCheckDissolved() {
+    setCheckingDissolved(true)
+    setDissolvedSummary(null)
+    const withNumbers = clients.filter((c) => c.company_number)
+    const archivedNames: string[] = []
+    const flagged: { name: string; status: string }[] = []
+
+    for (const client of withNumbers) {
+      try {
+        const res = await fetch('/api/ch-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ companyNumber: client.company_number }),
+        })
+        if (!res.ok) continue
+        const data: SyncResult = await res.json()
+        const status = (data.companyStatus || '').toLowerCase()
+        if (!status) continue
+
+        if (status === 'dissolved') {
+          await supabase
+            .from('cs_mailer_clients')
+            .update({
+              archived: true,
+              archived_at: new Date().toISOString(),
+              archived_reason: 'dissolved',
+              company_status: status,
+              accounts_last_synced_at: new Date().toISOString(),
+            })
+            .eq('id', client.id)
+          archivedNames.push(client.client_name)
+        } else if (status !== 'active') {
+          await supabase
+            .from('cs_mailer_clients')
+            .update({ company_status: status, accounts_last_synced_at: new Date().toISOString() })
+            .eq('id', client.id)
+          flagged.push({ name: client.client_name, status })
+        }
+      } catch {
+        // one client's check failing shouldn't stop the rest of the sweep
+      }
+    }
+
+    setDissolvedSummary({ archived: archivedNames, flagged })
+    setCheckingDissolved(false)
+    if (archivedNames.length > 0) loadClients()
+  }
+
   async function handleUndo() {
     if (!undoBanner) return
     await saveField(undoBanner.clientId, {
@@ -207,13 +269,59 @@ export default function YearEndList() {
         </div>
       )}
 
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Filter by company name…"
-        className="w-full rounded-md border border-line bg-white px-3.5 py-2.5 text-[15px] outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors mb-4"
-      />
+      {dissolvedSummary && (
+        <div className="mb-4 rounded-md border border-accent/30 bg-accent-light px-4 py-3 text-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="text-accent-dark">
+              {dissolvedSummary.archived.length === 0 && dissolvedSummary.flagged.length === 0 && (
+                <>No changes — everything checked still shows as active.</>
+              )}
+              {dissolvedSummary.archived.length > 0 && (
+                <div>
+                  Archived as dissolved: <strong>{dissolvedSummary.archived.join(', ')}</strong>
+                </div>
+              )}
+              {dissolvedSummary.flagged.length > 0 && (
+                <div className={dissolvedSummary.archived.length > 0 ? 'mt-1' : ''}>
+                  Worth a look (not auto-archived):{' '}
+                  <strong>
+                    {dissolvedSummary.flagged.map((f) => `${f.name} (${f.status})`).join(', ')}
+                  </strong>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => setDissolvedSummary(null)}
+              className="shrink-0 text-xs font-medium text-accent-dark hover:underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-3 mb-4">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter by company name…"
+          className="flex-1 rounded-md border border-line bg-white px-3.5 py-2.5 text-[15px] outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+        />
+        <button
+          onClick={handleCheckDissolved}
+          disabled={checkingDissolved}
+          className="shrink-0 text-sm font-medium text-accent hover:text-accent-dark disabled:opacity-40 transition-colors"
+        >
+          {checkingDissolved ? 'Checking…' : 'Check for dissolved companies'}
+        </button>
+        <button
+          onClick={() => setShowArchived(true)}
+          className="shrink-0 text-sm font-medium text-slate-650 hover:text-accent-dark transition-colors"
+        >
+          Archived clients
+        </button>
+      </div>
 
       {loading && <div className="text-sm text-slate-650">Loading clients…</div>}
       {loadError && <div className="text-sm text-warn mb-3">Couldn't load clients: {loadError}</div>}
@@ -421,6 +529,8 @@ export default function YearEndList() {
           }}
         />
       )}
+
+      {showArchived && <ArchivedClients onClose={() => setShowArchived(false)} />}
     </div>
   )
 }

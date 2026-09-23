@@ -53,6 +53,19 @@ alter table cs_mailer_clients add column if not exists year_end_completed_at tim
 
 create index if not exists cs_mailer_clients_company_number_idx on cs_mailer_clients (company_number) where company_number is not null and company_number <> '';
 
+-- Archiving: a client is hidden from the Confirmation Statements, Year End
+-- and Tasks views once archived, but never deleted — you can always find
+-- and restore it. company_status stores the last status Companies House
+-- reported (active, dissolved, liquidation, etc.), so the "check for
+-- dissolved companies" sweep has something to compare against without
+-- re-querying every client.
+alter table cs_mailer_clients add column if not exists archived boolean not null default false;
+alter table cs_mailer_clients add column if not exists archived_at timestamptz;
+alter table cs_mailer_clients add column if not exists archived_reason text;
+alter table cs_mailer_clients add column if not exists company_status text;
+
+create index if not exists cs_mailer_clients_archived_idx on cs_mailer_clients (archived);
+
 -- A simple history log so "Mark completed" can be undone, and so you have
 -- a record of when each year's accounts were actually signed off.
 create table if not exists cs_mailer_year_end_history (
