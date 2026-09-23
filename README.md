@@ -149,12 +149,16 @@ nothing is ever permanently removed.
 - **Archived clients**: click this link (on the Confirmation Statements or
   Year End tab) to see everything archived, with a **Restore** button for
   each.
-- **Check for dissolved companies**: on the Year End tab, this button
-  checks every client with a company number against Companies House.
-  Anything reported as exactly "dissolved" is archived automatically. Any
-  other unusual status (liquidation, administration, receivership, etc.)
-  is only flagged for you to look at — those can still have live filing
-  obligations, so they're never archived automatically.
+- **Check all against Companies House**: on the Year End tab, this button
+  checks every client with a company number, all in one pass:
+  - anything reported as exactly "dissolved" is archived automatically —
+    any other unusual status (liquidation, administration, receivership,
+    etc.) is only flagged for you to look at, since those can still have
+    live filing obligations, so they're never archived automatically;
+  - the confirmation statement date is refreshed from Companies House's
+    own records, so a statement that's already been filed (including
+    ones filed outside this app) stops showing as due.
+  A summary banner shows what changed once it's done.
 
 ## Bulk-loading data
 
@@ -180,8 +184,11 @@ staging table via Table Editor in between.
 - There's a **Send to client** button both above and below the message.
 - Use **+ New client** to add a company that isn't in the list yet, or
   **Edit** next to any search result to correct their details (including
-  the new company number / year end fields) — no need to go into Supabase
-  for either.
+  the company number / year end fields) — no need to go into Supabase for
+  either. While editing a client with a company number, **Check against
+  Companies House** looks up that one company on demand and lets you
+  apply its confirmation statement date, year end date and status
+  straight into the form before you save.
 - The Year End tab's accounts due date is always calculated as year end +
   9 months, per UK filing rules for most private companies. Companies
   House's own reported due date can differ for a company's very first set

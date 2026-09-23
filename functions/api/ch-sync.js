@@ -53,6 +53,11 @@ export async function onRequestPost(context) {
     lastAccountsFiledDate: data.accounts?.last_accounts?.made_up_to || null,
     lastAccountsType: data.accounts?.last_accounts?.type || null,
     confirmationStatementNextDue: data.confirmation_statement?.next_due || null,
+    // next_made_up_to is the period-end date for the confirmation statement
+    // currently due — storing this as confirmation_statement_date lets our
+    // own generated due_date column (period end + 14 days) line up with
+    // Companies House's own next_due above.
+    confirmationStatementNextMadeUpTo: data.confirmation_statement?.next_made_up_to || null,
     confirmationStatementLastMadeUpTo: data.confirmation_statement?.last_made_up_to || null,
   }
 

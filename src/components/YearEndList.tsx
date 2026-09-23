@@ -49,6 +49,7 @@ type SyncResult = {
   lastAccountsFiledDate: string | null
   lastAccountsType: string | null
   confirmationStatementNextDue: string | null
+  confirmationStatementNextMadeUpTo: string | null
   confirmationStatementLastMadeUpTo: string | null
 }
 
@@ -63,10 +64,14 @@ export default function YearEndList() {
   const [syncError, setSyncError] = useState('')
   const [editingYearEnd, setEditingYearEnd] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
-  const [checkingDissolved, setCheckingDissolved] = useState(false)
-  const [dissolvedSummary, setDissolvedSummary] = useState<{
+  const [checkingAll, setCheckingAll] = useState(false)
+  const [checkAllProgress, setCheckAllProgress] = useState<{ done: number; total: number } | null>(
+    null
+  )
+  const [checkAllSummary, setCheckAllSummary] = useState<{
     archived: string[]
     flagged: { name: string; status: string }[]
+    statementsUpdated: number
   } | null>(null)
   const [undoBanner, setUndoBanner] = useState<{
     clientId: string
@@ -188,18 +193,25 @@ export default function YearEndList() {
     })
   }
 
-  // Loops every client with a company number through Companies House and
-  // auto-archives the ones reported as exactly "dissolved" — the one
-  // status that unambiguously means there's nothing left to file for.
-  // Anything else unusual (liquidation, administration, receivership,
-  // voluntary arrangement, etc.) is only flagged for you to look at, since
-  // those companies can still have live filing obligations.
-  async function handleCheckDissolved() {
-    setCheckingDissolved(true)
-    setDissolvedSummary(null)
+  // Loops every client with a company number through Companies House in
+  // one pass and does three things at once:
+  //  - auto-archives any company reported as exactly "dissolved" (the one
+  //    status that unambiguously means there's nothing left to file for —
+  //    anything else unusual like liquidation, administration or
+  //    receivership is only flagged for you to look at, since those can
+  //    still carry live filing obligations)
+  //  - auto-updates the confirmation statement date from Companies
+  //    House's own "next made up to" date, so a statement you've already
+  //    filed (perhaps outside this app) stops showing as due
+  //  - records the latest company status either way
+  async function handleCheckAll() {
+    setCheckingAll(true)
+    setCheckAllSummary(null)
     const withNumbers = clients.filter((c) => c.company_number)
+    setCheckAllProgress({ done: 0, total: withNumbers.length })
     const archivedNames: string[] = []
     const flagged: { name: string; status: string }[] = []
+    let statementsUpdated = 0
 
     for (const client of withNumbers) {
       try {
@@ -208,38 +220,51 @@ export default function YearEndList() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ companyNumber: client.company_number }),
         })
-        if (!res.ok) continue
-        const data: SyncResult = await res.json()
-        const status = (data.companyStatus || '').toLowerCase()
-        if (!status) continue
+        if (res.ok) {
+          const data: SyncResult = await res.json()
+          const status = (data.companyStatus || '').toLowerCase()
 
-        if (status === 'dissolved') {
-          await supabase
-            .from('cs_mailer_clients')
-            .update({
-              archived: true,
-              archived_at: new Date().toISOString(),
-              archived_reason: 'dissolved',
-              company_status: status,
+          if (status === 'dissolved') {
+            await supabase
+              .from('cs_mailer_clients')
+              .update({
+                archived: true,
+                archived_at: new Date().toISOString(),
+                archived_reason: 'dissolved',
+                company_status: status,
+                accounts_last_synced_at: new Date().toISOString(),
+              })
+              .eq('id', client.id)
+            archivedNames.push(client.client_name)
+          } else {
+            const updates: Partial<Client> = {
               accounts_last_synced_at: new Date().toISOString(),
-            })
-            .eq('id', client.id)
-          archivedNames.push(client.client_name)
-        } else if (status !== 'active') {
-          await supabase
-            .from('cs_mailer_clients')
-            .update({ company_status: status, accounts_last_synced_at: new Date().toISOString() })
-            .eq('id', client.id)
-          flagged.push({ name: client.client_name, status })
+            }
+            if (status) updates.company_status = status
+            if (
+              data.confirmationStatementNextMadeUpTo &&
+              data.confirmationStatementNextMadeUpTo !== client.confirmation_statement_date
+            ) {
+              updates.confirmation_statement_date = data.confirmationStatementNextMadeUpTo
+              statementsUpdated++
+            }
+            await supabase.from('cs_mailer_clients').update(updates).eq('id', client.id)
+
+            if (status && status !== 'active') {
+              flagged.push({ name: client.client_name, status })
+            }
+          }
         }
       } catch {
         // one client's check failing shouldn't stop the rest of the sweep
       }
+      setCheckAllProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev))
     }
 
-    setDissolvedSummary({ archived: archivedNames, flagged })
-    setCheckingDissolved(false)
-    if (archivedNames.length > 0) loadClients()
+    setCheckAllSummary({ archived: archivedNames, flagged, statementsUpdated })
+    setCheckingAll(false)
+    setCheckAllProgress(null)
+    loadClients()
   }
 
   async function handleUndo() {
@@ -269,29 +294,39 @@ export default function YearEndList() {
         </div>
       )}
 
-      {dissolvedSummary && (
+      {checkAllSummary && (
         <div className="mb-4 rounded-md border border-accent/30 bg-accent-light px-4 py-3 text-sm">
           <div className="flex items-start justify-between gap-3">
-            <div className="text-accent-dark">
-              {dissolvedSummary.archived.length === 0 && dissolvedSummary.flagged.length === 0 && (
-                <>No changes — everything checked still shows as active.</>
-              )}
-              {dissolvedSummary.archived.length > 0 && (
+            <div className="text-accent-dark space-y-1">
+              {checkAllSummary.archived.length === 0 &&
+                checkAllSummary.flagged.length === 0 &&
+                checkAllSummary.statementsUpdated === 0 && (
+                  <div>No changes — everything checked is up to date.</div>
+                )}
+              {checkAllSummary.statementsUpdated > 0 && (
                 <div>
-                  Archived as dissolved: <strong>{dissolvedSummary.archived.join(', ')}</strong>
+                  Updated the confirmation statement date for{' '}
+                  <strong>{checkAllSummary.statementsUpdated}</strong>{' '}
+                  {checkAllSummary.statementsUpdated === 1 ? 'client' : 'clients'} from Companies
+                  House.
                 </div>
               )}
-              {dissolvedSummary.flagged.length > 0 && (
-                <div className={dissolvedSummary.archived.length > 0 ? 'mt-1' : ''}>
+              {checkAllSummary.archived.length > 0 && (
+                <div>
+                  Archived as dissolved: <strong>{checkAllSummary.archived.join(', ')}</strong>
+                </div>
+              )}
+              {checkAllSummary.flagged.length > 0 && (
+                <div>
                   Worth a look (not auto-archived):{' '}
                   <strong>
-                    {dissolvedSummary.flagged.map((f) => `${f.name} (${f.status})`).join(', ')}
+                    {checkAllSummary.flagged.map((f) => `${f.name} (${f.status})`).join(', ')}
                   </strong>
                 </div>
               )}
             </div>
             <button
-              onClick={() => setDissolvedSummary(null)}
+              onClick={() => setCheckAllSummary(null)}
               className="shrink-0 text-xs font-medium text-accent-dark hover:underline"
             >
               Dismiss
@@ -309,11 +344,15 @@ export default function YearEndList() {
           className="flex-1 rounded-md border border-line bg-white px-3.5 py-2.5 text-[15px] outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
         />
         <button
-          onClick={handleCheckDissolved}
-          disabled={checkingDissolved}
+          onClick={handleCheckAll}
+          disabled={checkingAll}
           className="shrink-0 text-sm font-medium text-accent hover:text-accent-dark disabled:opacity-40 transition-colors"
         >
-          {checkingDissolved ? 'Checking…' : 'Check for dissolved companies'}
+          {checkingAll
+            ? checkAllProgress
+              ? `Checking… (${checkAllProgress.done}/${checkAllProgress.total})`
+              : 'Checking…'
+            : 'Check all against Companies House'}
         </button>
         <button
           onClick={() => setShowArchived(true)}

@@ -24,11 +24,61 @@ export default function ClientForm({
   )
   const [companyNumber, setCompanyNumber] = useState(initial.company_number ?? '')
   const [yearEndDate, setYearEndDate] = useState(initial.year_end_date ?? '')
+  const [companyStatus, setCompanyStatus] = useState(initial.company_status ?? '')
   const [saving, setSaving] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [error, setError] = useState('')
 
+  const [checking, setChecking] = useState(false)
+  const [checkError, setCheckError] = useState('')
+  const [checkResult, setCheckResult] = useState<{
+    companyName: string | null
+    companyStatus: string | null
+    confirmationStatementNextMadeUpTo: string | null
+    nextYearEndDate: string | null
+  } | null>(null)
+
   const canSave = clientName.trim().length > 0
+
+  async function handleCheckCompaniesHouse() {
+    if (!companyNumber.trim()) return
+    setChecking(true)
+    setCheckError('')
+    setCheckResult(null)
+    try {
+      const res = await fetch('/api/ch-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyNumber: companyNumber.trim() }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      setCheckResult({
+        companyName: data.companyName || null,
+        companyStatus: data.companyStatus || null,
+        confirmationStatementNextMadeUpTo: data.confirmationStatementNextMadeUpTo || null,
+        nextYearEndDate: data.nextYearEndDate || null,
+      })
+    } catch (err) {
+      setCheckError(err instanceof Error ? err.message : 'Check failed')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  function applyCheckResult() {
+    if (!checkResult) return
+    if (checkResult.confirmationStatementNextMadeUpTo) {
+      setStatementDate(checkResult.confirmationStatementNextMadeUpTo)
+    }
+    if (checkResult.nextYearEndDate) {
+      setYearEndDate(checkResult.nextYearEndDate)
+    }
+    if (checkResult.companyStatus) {
+      setCompanyStatus(checkResult.companyStatus)
+    }
+    setCheckResult(null)
+  }
 
   async function handleArchive() {
     if (mode !== 'edit' || !initial.id) return
@@ -61,6 +111,7 @@ export default function ClientForm({
       confirmation_statement_date: statementDate || null,
       company_number: companyNumber.trim() || null,
       year_end_date: yearEndDate || null,
+      company_status: companyStatus.trim() || null,
     }
     try {
       if (mode === 'add') {
@@ -199,10 +250,64 @@ export default function ClientForm({
                 />
               </div>
             </div>
-            <p className="mt-1.5 text-xs text-slate-650">
-              Add the company number here (or match it from the Year End tab)
-              to enable syncing with Companies House.
-            </p>
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                onClick={handleCheckCompaniesHouse}
+                disabled={!companyNumber.trim() || checking}
+                className="text-xs font-medium text-accent hover:text-accent-dark disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {checking ? 'Checking…' : 'Check against Companies House'}
+              </button>
+              {companyStatus && (
+                <span className="text-xs text-slate-650">Status on file: {companyStatus}</span>
+              )}
+            </div>
+            {!companyNumber.trim() && (
+              <p className="mt-1.5 text-xs text-slate-650">
+                Add the company number here (or match it from the Year End tab)
+                to enable syncing with Companies House.
+              </p>
+            )}
+
+            {checkError && <p className="mt-2 text-xs text-warn">{checkError}</p>}
+
+            {checkResult && (
+              <div className="mt-2 rounded-md border border-accent/30 bg-accent-light p-3 text-xs">
+                <div className="text-ink mb-2">
+                  Companies House reports{' '}
+                  <strong>{checkResult.companyName || clientName}</strong>
+                  {checkResult.companyStatus ? <> ({checkResult.companyStatus})</> : null}:
+                </div>
+                <ul className="space-y-1 text-ink mb-2">
+                  <li>
+                    Confirmation statement period end:{' '}
+                    <strong>{checkResult.confirmationStatementNextMadeUpTo || '—'}</strong>
+                  </li>
+                  <li>
+                    Next year end: <strong>{checkResult.nextYearEndDate || '—'}</strong>
+                  </li>
+                </ul>
+                {checkResult.companyStatus?.toLowerCase() === 'dissolved' && (
+                  <p className="mb-2 text-warn">
+                    This company shows as dissolved — save, then use "Archive client" below.
+                  </p>
+                )}
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={applyCheckResult}
+                    className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-dark transition-colors"
+                  >
+                    Apply to this form
+                  </button>
+                  <button
+                    onClick={() => setCheckResult(null)}
+                    className="text-xs font-medium text-slate-650 hover:text-accent-dark transition-colors"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
