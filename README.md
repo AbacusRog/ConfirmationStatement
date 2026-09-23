@@ -1,6 +1,6 @@
 # Abacus Client Tasks
 
-Two tools sharing one client list:
+Three tools sharing one client list:
 
 - **Confirmation Statements** — search a client, check their details,
   review the templated Companies House reminder, and send it.
@@ -8,6 +8,13 @@ Two tools sharing one client list:
   traffic light for how close it is, one-click sync against Companies
   House, and a "mark completed" action that rolls the year end forward to
   next year automatically.
+- **Tasks** — a compact, combined list of every upcoming deadline (company
+  name, number, and due date only) across both confirmation statements and
+  accounts, for a quick scan.
+
+Clients can be added by searching Companies House directly, and archived
+(rather than deleted) once they're no longer active — archived clients are
+hidden from all three tabs but can always be found and restored.
 
 ## 1. Set up Supabase
 
@@ -111,6 +118,43 @@ This is a free tier with a generous rate limit (600 requests per 5 minutes)
    completed → roll to next year". This logs the completed cycle,
    advances the year end date by a year for next time, and shows an
    **Undo** link in case you clicked it by mistake.
+
+## Using the Tasks tab
+
+A single, dense list of every client with an outstanding confirmation
+statement or accounts deadline, showing just the company name, its
+Companies House number, and the due date — with the same traffic-light dot
+as the other tabs. A client with both types of deadline outstanding gets a
+row for each. Archived clients never appear here.
+
+## Adding clients
+
+Two ways to add a client, both on the Confirmation Statements tab:
+
+- **+ From Companies House** — search by company name, pick the right
+  result, and a client is created immediately with its name and company
+  number, and (best-effort) its next year end date and current status
+  pulled straight from Companies House. It then opens for editing so you
+  can add the email address and anything else.
+- **+ New client** — the manual form, for clients not yet on Companies
+  House or where you'd rather type everything in yourself.
+
+## Archiving clients
+
+Use this for clients you no longer act for, rather than deleting them —
+nothing is ever permanently removed.
+
+- **Archive one**: open a client via **Edit** on the Confirmation
+  Statements tab and click **Archive client** at the bottom of the form.
+- **Archived clients**: click this link (on the Confirmation Statements or
+  Year End tab) to see everything archived, with a **Restore** button for
+  each.
+- **Check for dissolved companies**: on the Year End tab, this button
+  checks every client with a company number against Companies House.
+  Anything reported as exactly "dissolved" is archived automatically. Any
+  other unusual status (liquidation, administration, receivership, etc.)
+  is only flagged for you to look at — those can still have live filing
+  obligations, so they're never archived automatically.
 
 ## Bulk-loading data
 
