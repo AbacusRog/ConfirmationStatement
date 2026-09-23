@@ -46,6 +46,13 @@ export default function ClientForm({
     companyStatus: string | null
     confirmationStatementNextMadeUpTo: string | null
     nextYearEndDate: string | null
+    registeredOfficeAddress: {
+      addr1: string | null
+      addr2: string | null
+      town: string | null
+      county: string | null
+      postcode: string | null
+    } | null
   } | null>(null)
 
   const canSave = clientName.trim().length > 0
@@ -68,6 +75,7 @@ export default function ClientForm({
         companyStatus: data.companyStatus || null,
         confirmationStatementNextMadeUpTo: data.confirmationStatementNextMadeUpTo || null,
         nextYearEndDate: data.nextYearEndDate || null,
+        registeredOfficeAddress: data.registeredOfficeAddress || null,
       })
     } catch (err) {
       setCheckError(err instanceof Error ? err.message : 'Check failed')
@@ -86,6 +94,14 @@ export default function ClientForm({
     }
     if (checkResult.companyStatus) {
       setCompanyStatus(checkResult.companyStatus)
+    }
+    if (checkResult.registeredOfficeAddress) {
+      const a = checkResult.registeredOfficeAddress
+      if (a.addr1) setAddr1(a.addr1)
+      if (a.addr2) setAddr2(a.addr2)
+      if (a.town) setTown(a.town)
+      if (a.county) setCounty(a.county)
+      if (a.postcode) setPostcode(a.postcode)
     }
     setCheckResult(null)
   }
@@ -378,6 +394,22 @@ export default function ClientForm({
                   </li>
                   <li>
                     Next year end: <strong>{checkResult.nextYearEndDate || '—'}</strong>
+                  </li>
+                  <li>
+                    Registered office:{' '}
+                    <strong>
+                      {checkResult.registeredOfficeAddress
+                        ? [
+                            checkResult.registeredOfficeAddress.addr1,
+                            checkResult.registeredOfficeAddress.addr2,
+                            checkResult.registeredOfficeAddress.town,
+                            checkResult.registeredOfficeAddress.county,
+                            checkResult.registeredOfficeAddress.postcode,
+                          ]
+                            .filter(Boolean)
+                            .join(', ') || '—'
+                        : '—'}
+                    </strong>
                   </li>
                 </ul>
                 {checkResult.companyStatus?.toLowerCase() === 'dissolved' && (

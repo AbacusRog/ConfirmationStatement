@@ -170,6 +170,16 @@ export default function DocumentsList() {
   const [individuals, setIndividuals] = useState<Client[]>([])
   const [addingClient, setAddingClient] = useState<{ initial: Partial<Client> } | null>(null)
 
+  const [addressSyncing, setAddressSyncing] = useState(false)
+  const [addressCheckError, setAddressCheckError] = useState('')
+  const [addressCheckResult, setAddressCheckResult] = useState<{
+    addr1: string | null
+    addr2: string | null
+    town: string | null
+    county: string | null
+    postcode: string | null
+  } | null>(null)
+
   const [wantLetter, setWantLetter] = useState(true)
   const [wantAml, setWantAml] = useState(true)
   const [reviewerName, setReviewerName] = useState('Roger Biddlecombe')
@@ -194,7 +204,55 @@ export default function DocumentsList() {
     setCompany(c)
     setDirectors([])
     setCheckedDirectorIds(new Set())
+    setAddressCheckResult(null)
+    setAddressCheckError('')
     if (c.company_number) loadDirectors(c.company_number)
+  }
+
+  async function handleCheckRegisteredAddress() {
+    if (!company?.company_number) return
+    setAddressSyncing(true)
+    setAddressCheckError('')
+    setAddressCheckResult(null)
+    try {
+      const res = await fetch('/api/ch-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyNumber: company.company_number }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      if (!data.registeredOfficeAddress) {
+        setAddressCheckError('Companies House has no registered office address on file.')
+      } else {
+        setAddressCheckResult(data.registeredOfficeAddress)
+      }
+    } catch (err) {
+      setAddressCheckError(err instanceof Error ? err.message : 'Check failed')
+    } finally {
+      setAddressSyncing(false)
+    }
+  }
+
+  async function applyRegisteredAddress() {
+    if (!company || !addressCheckResult) return
+    const updates = {
+      addr1: addressCheckResult.addr1 || company.addr1,
+      addr2: addressCheckResult.addr2 || company.addr2,
+      town: addressCheckResult.town || company.town,
+      county: addressCheckResult.county || company.county,
+      postcode: addressCheckResult.postcode || company.postcode,
+    }
+    const { data, error } = await supabase
+      .from('cs_mailer_clients')
+      .update(updates)
+      .eq('id', company.id)
+      .select()
+      .single()
+    if (!error && data) {
+      setCompany(data as Client)
+      setAddressCheckResult(null)
+    }
   }
 
   async function handleSyncDirectors() {
@@ -334,18 +392,62 @@ export default function DocumentsList() {
                   <div className="text-xs text-slate-650 mt-0.5">
                     {addressForClient(company) || 'No address on file — edit the client to add one'}
                   </div>
+                  {company.company_number && (
+                    <button
+                      onClick={handleCheckRegisteredAddress}
+                      disabled={addressSyncing}
+                      className="mt-1 text-xs font-medium text-accent hover:text-accent-dark disabled:opacity-40 transition-colors"
+                    >
+                      {addressSyncing ? 'Checking…' : 'Sync registered office address'}
+                    </button>
+                  )}
                 </div>
                 <button
                   onClick={() => {
                     setCompany(null)
                     setDirectors([])
                     setCheckedDirectorIds(new Set())
+                    setAddressCheckResult(null)
+                    setAddressCheckError('')
                   }}
                   className="text-xs font-medium text-warn hover:underline"
                 >
                   Remove
                 </button>
               </div>
+
+              {addressCheckError && <p className="mt-2 text-xs text-warn">{addressCheckError}</p>}
+
+              {addressCheckResult && (
+                <div className="mt-2 rounded-md border border-accent/30 bg-accent-light p-3 text-xs">
+                  <div className="text-ink mb-1">Companies House registered office:</div>
+                  <div className="text-ink mb-2">
+                    {[
+                      addressCheckResult.addr1,
+                      addressCheckResult.addr2,
+                      addressCheckResult.town,
+                      addressCheckResult.county,
+                      addressCheckResult.postcode,
+                    ]
+                      .filter(Boolean)
+                      .join(', ') || '—'}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={applyRegisteredAddress}
+                      className="rounded-md bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-dark transition-colors"
+                    >
+                      Use this address
+                    </button>
+                    <button
+                      onClick={() => setAddressCheckResult(null)}
+                      className="text-xs font-medium text-slate-650 hover:text-accent-dark transition-colors"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {company.company_number && (
                 <div className="mt-3 border-t border-line pt-3">

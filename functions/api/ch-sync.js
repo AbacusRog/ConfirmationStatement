@@ -41,6 +41,21 @@ export async function onRequestPost(context) {
 
   const data = await chRes.json()
 
+  // Flatten Companies House's registered office address into the same
+  // addr1/addr2/town/county/postcode shape this app stores on a client, so
+  // it can be applied directly. "premises" (building name/number) often
+  // isn't repeated in address_line_1, so it's prefixed on when present.
+  const reg = data.registered_office_address
+  const registeredOfficeAddress = reg
+    ? {
+        addr1: [reg.premises, reg.address_line_1].filter(Boolean).join(', ') || null,
+        addr2: reg.address_line_2 || null,
+        town: reg.locality || null,
+        county: reg.region || null,
+        postcode: reg.postal_code || null,
+      }
+    : null
+
   // next_accounts.period_end_on is the end date of the NEXT accounting
   // period — i.e. the year end you need to track and file for next.
   // last_accounts.made_up_to is the year end of the most recently filed
@@ -59,6 +74,7 @@ export async function onRequestPost(context) {
     // Companies House's own next_due above.
     confirmationStatementNextMadeUpTo: data.confirmation_statement?.next_made_up_to || null,
     confirmationStatementLastMadeUpTo: data.confirmation_statement?.last_made_up_to || null,
+    registeredOfficeAddress,
   }
 
   return new Response(JSON.stringify(result), {

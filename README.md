@@ -204,16 +204,20 @@ before, now against this app's own client list instead of a separate one.
    Directors, above) are loaded automatically as a checklist; untick any
    who shouldn't get a letter this time. Click **Sync from Companies
    House** here if the list looks out of date.
-2. Companies House's officer address is sometimes a service address
+2. Click **Sync registered office address** under the company's name to
+   pull its current registered office straight from Companies House —
+   shown for you to check before it's applied with **Use this address**,
+   the same review-then-apply pattern as everywhere else in this app.
+3. Companies House's officer address is sometimes a service address
    rather than where the director actually wants post — click **Edit
    address** next to any director to override what prints on their
    letter. This is stored separately from the synced Companies House data,
    so it isn't lost or overwritten by the next sync.
-3. **Individuals** — search for and add any other individual client (a
+4. **Individuals** — search for and add any other individual client (a
    personal tax client, a spouse, anyone not picked up as a Companies
    House officer). Use **+ New client** in either section to add someone
    who isn't in the list yet.
-4. Tick **Engagement letter** and/or **AML periodic review** (the AML
+5. Tick **Engagement letter** and/or **AML periodic review** (the AML
    review only ever generates for the company, never for directors or
    individuals), set the reviewer name, and **Generate & download**.
    Every selected person/company gets their own PDF(s), downloaded
@@ -244,6 +248,19 @@ Once you've checked everything looks right in the app, the migration
 script's final comment has the two `drop table` statements to retire the
 old `doc_generator_*` tables — run those (or just leave the old app
 deployed a little longer as a fallback) whenever you're ready.
+
+### Importing straight from the "All Clients Contact Info" export
+
+If you'd rather import directly from that spreadsheet than rely on the
+old app's table still being around, `supabase/load_all_clients_contact_info.sql`
+does the same job in one paste-and-run — the spreadsheet's rows are
+embedded in the file itself, so there's no separate CSV upload step. It's
+matched on client code exactly like the migration script (fills blanks on
+clients you already have, adds new individuals — mostly personal tax
+clients — for the rest), and this is what makes them appear in the
+Documents tab's individual picker. Regenerate this file (ask, and attach
+a fresh export) any time the spreadsheet is updated — it isn't kept in
+sync automatically.
 
 ## Bulk-loading data
 
