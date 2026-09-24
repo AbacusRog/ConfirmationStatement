@@ -108,9 +108,13 @@ export async function onRequestGet(context) {
   if (!env.DIGEST_SECRET || url.searchParams.get('key') !== env.DIGEST_SECRET) {
     return new Response('Unauthorized', { status: 401 })
   }
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+  // The project already has VITE_SUPABASE_URL set (it's the public project
+  // URL, baked into the browser bundle, so there's nothing extra to add) —
+  // fall back to that if a separate, non-VITE SUPABASE_URL isn't set.
+  const supabaseUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL
+  if (!supabaseUrl || !env.SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(
-      'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables',
+      'Missing SUPABASE_URL (or VITE_SUPABASE_URL) or SUPABASE_SERVICE_ROLE_KEY environment variables',
       { status: 500 }
     )
   }
@@ -119,7 +123,7 @@ export async function onRequestGet(context) {
   }
 
   const sbRes = await fetch(
-    `${env.SUPABASE_URL.replace(/\/$/, '')}/rest/v1/cs_mailer_clients?select=id,client_name,company_number,due_date,accounts_due_date&archived=eq.false&client_kind=eq.company`,
+    `${supabaseUrl.replace(/\/$/, '')}/rest/v1/cs_mailer_clients?select=id,client_name,company_number,due_date,accounts_due_date&archived=eq.false&client_kind=eq.company`,
     {
       headers: {
         apikey: env.SUPABASE_SERVICE_ROLE_KEY,

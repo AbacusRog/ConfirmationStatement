@@ -85,7 +85,11 @@ This is a free tier with a generous rate limit (600 requests per 5 minutes)
      for Year End syncing)
    - `SUPABASE_SERVICE_ROLE_KEY` — from Supabase step 1.4 (the **service
      role** key, not the anon key — copy it as a **Secret**), needed only
-     for the RED-tasks email digest below
+     for the RED-tasks email digest below. Double-check the variable name
+     is exactly `SUPABASE_SERVICE_ROLE_KEY` — Cloudflare's table truncates
+     long names visually, so it's easy to save it one character short.
+     (`VITE_SUPABASE_URL`, already set from step 1.4, is reused for this
+     too — no separate URL variable needed.)
    - `DIGEST_SECRET` — any long random string you make up, as a **Secret**
      (needed for the RED-tasks email digest below)
    - `DIGEST_TO_ADDRESS` — e.g. `roger@abacusconsultancy.co.uk` (optional —
