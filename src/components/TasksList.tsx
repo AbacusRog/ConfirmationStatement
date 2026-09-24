@@ -36,6 +36,7 @@ type Task = {
   companyNumber: string | null
   kind: 'Confirmation statement' | 'Accounts'
   dueDate: string
+  directorNames: string[]
 }
 
 // A dense, at-a-glance list of every outstanding deadline across both
@@ -67,9 +68,35 @@ export default function TasksList() {
         setLoading(false)
         return
       }
+
+      // Pull in active directors so a search can match on director name too
+      // ("who's on the board of X" in reverse — find every company a named
+      // director sits on). Resigned directors are excluded, matching the
+      // Documents tab's default director checklist.
+      const { data: directorRows, error: directorError } = await supabase
+        .from('cs_mailer_directors')
+        .select('company_number, full_name')
+        .is('resigned_on', null)
+      if (directorError) {
+        setError(directorError.message)
+        setLoading(false)
+        return
+      }
+      const directorsByCompany = new Map<string, string[]>()
+      for (const d of directorRows ?? []) {
+        const key = d.company_number
+        if (!key) continue
+        const list = directorsByCompany.get(key) ?? []
+        list.push(d.full_name)
+        directorsByCompany.set(key, list)
+      }
+
       const clients = (data as Client[]) ?? []
       const rows: Task[] = []
       for (const c of clients) {
+        const directorNames = c.company_number
+          ? directorsByCompany.get(c.company_number) ?? []
+          : []
         if (c.due_date) {
           rows.push({
             clientId: c.id,
@@ -77,6 +104,7 @@ export default function TasksList() {
             companyNumber: c.company_number,
             kind: 'Confirmation statement',
             dueDate: c.due_date,
+            directorNames,
           })
         }
         if (c.accounts_due_date) {
@@ -86,6 +114,7 @@ export default function TasksList() {
             companyNumber: c.company_number,
             kind: 'Accounts',
             dueDate: c.accounts_due_date,
+            directorNames,
           })
         }
       }
@@ -98,9 +127,12 @@ export default function TasksList() {
 
   const filtered = tasks
     .filter((t) => kindFilter === 'all' || t.kind === kindFilter)
-    .filter((t) =>
-      query.trim() ? t.clientName.toLowerCase().includes(query.trim().toLowerCase()) : true
-    )
+    .filter((t) => {
+      const q = query.trim().toLowerCase()
+      if (!q) return true
+      if (t.clientName.toLowerCase().includes(q)) return true
+      return t.directorNames.some((name) => name.toLowerCase().includes(q))
+    })
 
   const filterOptions: { value: 'all' | 'Confirmation statement' | 'Accounts'; label: string }[] = [
     { value: 'all', label: 'All' },
@@ -115,7 +147,7 @@ export default function TasksList() {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter by company name…"
+          placeholder="Filter by company name or director…"
           className="flex-1 rounded-md border border-line bg-white px-3.5 py-2.5 text-[15px] outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
         />
         <div className="flex shrink-0 rounded-md border border-line bg-white p-0.5">
@@ -147,6 +179,11 @@ export default function TasksList() {
           )}
           {filtered.map((t, i) => {
             const u = urgency(t.dueDate)
+            const q = query.trim().toLowerCase()
+            const matchedByDirector =
+              q &&
+              !t.clientName.toLowerCase().includes(q) &&
+              t.directorNames.some((name) => name.toLowerCase().includes(q))
             return (
               <div
                 key={`${t.clientId}-${t.kind}`}
@@ -155,7 +192,14 @@ export default function TasksList() {
                 }`}
               >
                 <span className={`h-2 w-2 shrink-0 rounded-full ${dotColor[u]}`} />
-                <div className="flex-1 min-w-0 truncate text-ink">{t.clientName}</div>
+                <div className="flex-1 min-w-0 truncate">
+                  <div className="truncate text-ink">{t.clientName}</div>
+                  {matchedByDirector && (
+                    <div className="truncate text-xs text-slate-650">
+                      Director: {t.directorNames.join(', ')}
+                    </div>
+                  )}
+                </div>
                 <div className="w-28 shrink-0 text-slate-650 text-xs">
                   {t.companyNumber || '—'}
                 </div>

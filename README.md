@@ -139,6 +139,15 @@ row for each. Use the **All / Confirmation statements / Accounts** filter
 above the list to narrow it to one type. Archived clients never appear
 here.
 
+The search box matches on company name **or director name** — type a
+director's name to see every company they're currently a director of, each
+as its own row. Director data comes from the same Companies House sync
+used on the Year End tab and the Documents tab (resigned directors are
+excluded), so a company needs its directors synced at least once before its
+directors are searchable here. When a row matched on director rather than
+company name, the row shows which director(s) matched underneath the
+company name.
+
 ## Adding clients
 
 Two ways to add a client, both on the Confirmation Statements tab:
