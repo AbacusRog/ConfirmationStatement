@@ -159,6 +159,50 @@ directors are searchable here. When a row matched on director rather than
 company name, the row shows which director(s) matched underneath the
 company name.
 
+## Using the Accounts Pack tab
+
+Turns a finished set of accounts into a client pack and emails it.
+
+1. **Client**: search as usual. If there is no email address, type it in
+   (it is saved to the client when you send) or use **Edit** in the list.
+2. **Your documents**: drop in the Statutory Accounts, the Self Assessment
+   return (SA100 with SA302 and payment summary), the Invoice and the
+   Covering Letter. These are attached to the email untouched. The tab reads
+   them in your browser; nothing is uploaded anywhere until you send.
+3. **Corporation Tax**: the exact amount, payment reference and due date.
+   These are filled in from the covering letter if you upload it. The due
+   date otherwise defaults to year end + 9 months + 1 day.
+4. **Email options**: tick which Money Laundering documents you need
+   (Passport, Driving Licence, Current Utility Bill or Mobile Phone Bill,
+   Personal Bank Statement; nothing ticked leaves the section out). The
+   SmartVault message is on by default. The sense-check page in the Tax
+   Payments sheet is on by default, and **the client can read it**, so turn
+   it off if you would rather not send it.
+5. **Build the documents**: creates *Accounts 2026.pdf* (a readable copy of
+   the statutory accounts with linked contents, bookmarks and a financial
+   review; every word of the statutory accounts is carried across and the
+   tab tells you if any are not) and *<Name>_<year>_Tax_Payments.pdf*.
+6. **Review and send**: shows the email exactly as the client will see it,
+   the six attachments, and asks for a final confirmation. Sent through
+   Resend with a BCC to you.
+
+Notes:
+
+- Sending uses `/api/send-pack`, which **requires you to be signed in**
+  (it checks your Supabase session). It needs `VITE_SUPABASE_URL` and
+  `VITE_SUPABASE_ANON_KEY` to be set in Cloudflare Pages (already there from
+  step 4), plus `RESEND_API_KEY`, `SEND_FROM_ADDRESS` and optionally
+  `BCC_ADDRESS`. The email logo comes from the site's own address, or from
+  `VITE_SITE_URL` if you set it.
+- The PDF readers were written against your practice software's layout and
+  tested on the Zummo / Child And Family Advisory Service set. Check the
+  first few packs from other clients against the originals; the
+  "sense-checks" and financial review are rule-based and use only figures
+  found in the documents.
+- The older `/api/send` endpoint (confirmation statements) does not check
+  who is calling it.
+- The total attachment size is limited to about 26 MB.
+
 ## Daily RED tasks email
 
 `/api/red-tasks-digest` sends you an email listing every RED task (the

@@ -7,10 +7,11 @@ import EmailPreview from './components/EmailPreview'
 import YearEndList from './components/YearEndList'
 import TasksList from './components/TasksList'
 import DocumentsList from './components/DocumentsList'
+import AccountsPack from './components/AccountsPack'
 
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
-  const [tab, setTab] = useState<'confirmation' | 'yearend' | 'tasks' | 'documents'>('confirmation')
+  const [tab, setTab] = useState<'confirmation' | 'yearend' | 'tasks' | 'documents' | 'pack'>('confirmation')
   const [selected, setSelected] = useState<Client | null>(null)
   const [key, setKey] = useState(0) // forces a fresh search after sending
 
@@ -30,7 +31,7 @@ export default function App() {
   // The Documents tab lays out a company/director picker beside a
   // generate panel, side by side — it needs more width than the other
   // tabs' single-column layouts.
-  const maxWidth = tab === 'documents' ? 'max-w-6xl' : 'max-w-3xl'
+  const maxWidth = tab === 'documents' ? 'max-w-6xl' : tab === 'pack' ? 'max-w-4xl' : 'max-w-3xl'
 
   return (
     <div className="min-h-screen bg-paper">
@@ -45,6 +46,8 @@ export default function App() {
                 ? 'Track year end dates, sync with Companies House, and roll cycles forward.'
                 : tab === 'tasks'
                 ? 'Every upcoming deadline, at a glance.'
+                : tab === 'pack'
+                ? 'Turn the finished accounts into a client pack and email it.'
                 : 'Engagement letters and AML reviews for companies, directors and individuals.'}
             </p>
           </div>
@@ -96,6 +99,16 @@ export default function App() {
           >
             Documents
           </button>
+          <button
+            onClick={() => setTab('pack')}
+            className={`px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              tab === 'pack'
+                ? 'border-accent text-accent-dark'
+                : 'border-transparent text-slate-650 hover:text-ink'
+            }`}
+          >
+            Accounts Pack
+          </button>
         </div>
       </header>
 
@@ -120,6 +133,8 @@ export default function App() {
           <YearEndList />
         ) : tab === 'tasks' ? (
           <TasksList />
+        ) : tab === 'pack' ? (
+          <AccountsPack />
         ) : (
           <DocumentsList />
         )}
