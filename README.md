@@ -83,6 +83,13 @@ This is a free tier with a generous rate limit (600 requests per 5 minutes)
      image in emails)
    - `CH_API_KEY` — from step 3, as a **Secret**, not plain text (needed
      for Year End syncing)
+   - `SUPABASE_SERVICE_ROLE_KEY` — from Supabase step 1.4 (the **service
+     role** key, not the anon key — copy it as a **Secret**), needed only
+     for the RED-tasks email digest below
+   - `DIGEST_SECRET` — any long random string you make up, as a **Secret**
+     (needed for the RED-tasks email digest below)
+   - `DIGEST_TO_ADDRESS` — e.g. `roger@abacusconsultancy.co.uk` (optional —
+     defaults to this if not set)
 4. Redeploy.
 
 ## 5. Set up your login
@@ -147,6 +154,30 @@ excluded), so a company needs its directors synced at least once before its
 directors are searchable here. When a row matched on director rather than
 company name, the row shows which director(s) matched underneath the
 company name.
+
+## Daily RED tasks email
+
+`/api/red-tasks-digest` sends you an email listing every RED task (the
+same rows the Tasks tab would show with no filter applied — confirmation
+statements and accounts due within a month, across all company clients).
+It's a GET endpoint meant to be hit once a day by a scheduler rather than
+clicked in the app, and it's protected by a secret so the URL alone isn't
+enough to trigger it:
+
+```
+https://<your-site>/api/red-tasks-digest?key=<DIGEST_SECRET>
+```
+
+Visit that URL (with your real domain and the `DIGEST_SECRET` value you
+set in Cloudflare) once yourself to check it sends before relying on it —
+it emails whoever's in `DIGEST_TO_ADDRESS` (or `roger@abacusconsultancy.co.uk`
+if that's not set) and returns a plain-text "OK — sent N red task(s)" so
+you can tell it worked without waiting for the email.
+
+To actually get it every morning, something needs to call that URL on a
+schedule — Cloudflare Pages Functions don't run on their own timer, so
+this needs a small scheduler on the outside (a Cloudflare Worker Cron
+Trigger, or any scheduled task set up to fetch that URL each morning).
 
 ## Adding clients
 
