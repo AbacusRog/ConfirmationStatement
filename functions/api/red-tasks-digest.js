@@ -101,6 +101,117 @@ function buildHtml(rows) {
 </html>`
 }
 
+// Adds one calendar year to a "YYYY-MM-DD" date string, same rule as the
+// Year End tab's own fallback when Companies House doesn't give us an
+// explicit next year end.
+function addYears(dateStr, years) {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(Date.UTC(y + years, m - 1, d))
+  return date.toISOString().slice(0, 10)
+}
+
+// Companies House lookup, inlined rather than calling the sibling
+// /api/ch-sync route (Pages Functions don't give one function an easy way
+// to invoke another internally) — same request as ch-sync.js, trimmed to
+// just the fields this sweep needs.
+async function lookupCompany(companyNumber, chApiKey) {
+  const auth = btoa(`${chApiKey}:`)
+  const res = await fetch(
+    `https://api.company-information.service.gov.uk/company/${encodeURIComponent(companyNumber)}`,
+    { headers: { Authorization: `Basic ${auth}` } }
+  )
+  if (!res.ok) return null
+  const data = await res.json()
+  return {
+    companyStatus: data.company_status || null,
+    nextYearEndDate: data.accounts?.next_accounts?.period_end_on || null,
+    lastAccountsFiledDate: data.accounts?.last_accounts?.made_up_to || null,
+    confirmationStatementNextMadeUpTo: data.confirmation_statement?.next_made_up_to || null,
+  }
+}
+
+// Runs the same sweep as the Year End tab's "Check all" button (archive
+// dissolved companies, refresh the confirmation statement date, roll the
+// year end forward once accounts are filed for the current cycle) so the
+// digest below is built from up-to-date data rather than whatever was last
+// synced from the app's UI. due_date and accounts_due_date are Postgres
+// generated columns (confirmation_statement_date + 14 days, year_end_date +
+// 9 months), so updating the base columns here is enough for the very next
+// SELECT to pick up fresh due dates.
+async function syncWithCompaniesHouse(clients, supabaseUrl, serviceKey, chApiKey) {
+  const base = supabaseUrl.replace(/\/$/, '')
+  const headers = {
+    apikey: serviceKey,
+    Authorization: `Bearer ${serviceKey}`,
+    'Content-Type': 'application/json',
+  }
+  const patch = (id, body) =>
+    fetch(`${base}/rest/v1/cs_mailer_clients?id=eq.${id}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(body),
+    })
+  const insertHistory = (body) =>
+    fetch(`${base}/rest/v1/cs_mailer_year_end_history`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    })
+
+  for (const client of clients) {
+    if (!client.company_number) continue
+    try {
+      const data = await lookupCompany(client.company_number, chApiKey)
+      if (!data) continue
+      const status = (data.companyStatus || '').toLowerCase()
+
+      if (status === 'dissolved') {
+        await patch(client.id, {
+          archived: true,
+          archived_at: new Date().toISOString(),
+          archived_reason: 'dissolved',
+          company_status: status,
+          accounts_last_synced_at: new Date().toISOString(),
+        })
+        client.archived = true
+        continue
+      }
+
+      const updates = { accounts_last_synced_at: new Date().toISOString() }
+      if (status) updates.company_status = status
+      if (
+        data.confirmationStatementNextMadeUpTo &&
+        data.confirmationStatementNextMadeUpTo !== client.confirmation_statement_date
+      ) {
+        updates.confirmation_statement_date = data.confirmationStatementNextMadeUpTo
+        client.confirmation_statement_date = data.confirmationStatementNextMadeUpTo
+      }
+
+      if (
+        client.year_end_date &&
+        data.lastAccountsFiledDate &&
+        data.lastAccountsFiledDate >= client.year_end_date &&
+        data.lastAccountsFiledDate !== client.accounts_last_filed_ch
+      ) {
+        await insertHistory({
+          client_id: client.id,
+          year_end_date: client.year_end_date,
+          accounts_due_date: client.accounts_due_date,
+        })
+        updates.year_end_date = data.nextYearEndDate || addYears(client.year_end_date, 1)
+        updates.accounts_last_filed_ch = data.lastAccountsFiledDate
+        updates.year_end_completed_at = null
+        client.year_end_date = updates.year_end_date
+      }
+
+      await patch(client.id, updates)
+    } catch {
+      // one client's Companies House check failing shouldn't stop the rest
+      // of the sweep or the digest that follows
+    }
+  }
+}
+
 export async function onRequestGet(context) {
   const { request, env } = context
   const url = new URL(request.url)
@@ -123,7 +234,7 @@ export async function onRequestGet(context) {
   }
 
   const sbRes = await fetch(
-    `${supabaseUrl.replace(/\/$/, '')}/rest/v1/cs_mailer_clients?select=id,client_name,company_number,due_date,accounts_due_date&archived=eq.false&client_kind=eq.company`,
+    `${supabaseUrl.replace(/\/$/, '')}/rest/v1/cs_mailer_clients?select=id,client_name,company_number,due_date,accounts_due_date,confirmation_statement_date,year_end_date,accounts_last_filed_ch,accounts_due_date&archived=eq.false&client_kind=eq.company`,
     {
       headers: {
         apikey: env.SUPABASE_SERVICE_ROLE_KEY,
@@ -135,7 +246,30 @@ export async function onRequestGet(context) {
     const text = await sbRes.text()
     return new Response(`Supabase query failed: ${text}`, { status: 502 })
   }
-  const clients = await sbRes.json()
+  let clients = await sbRes.json()
+
+  // Run a fresh Companies House check before building the digest, same as
+  // the "Check all" sweep in the Year End tab, so a statement or accounts
+  // filing done outside this app doesn't still show up as red. Skipped
+  // (not failed) if CH_API_KEY isn't configured, so the digest still goes
+  // out with whatever data is already on file.
+  if (env.CH_API_KEY) {
+    await syncWithCompaniesHouse(clients, supabaseUrl, env.SUPABASE_SERVICE_ROLE_KEY, env.CH_API_KEY)
+    // due_date/accounts_due_date are generated columns, so re-read rather
+    // than recompute them by hand — this also naturally drops anything the
+    // sweep just archived (dissolved companies), since the filter below
+    // still applies.
+    const freshRes = await fetch(
+      `${supabaseUrl.replace(/\/$/, '')}/rest/v1/cs_mailer_clients?select=id,client_name,company_number,due_date,accounts_due_date&archived=eq.false&client_kind=eq.company`,
+      {
+        headers: {
+          apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+      }
+    )
+    if (freshRes.ok) clients = await freshRes.json()
+  }
 
   // Same red/amber/green rule as the Tasks tab: red = due within a month.
   const now = new Date()

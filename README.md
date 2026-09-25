@@ -82,7 +82,8 @@ This is a free tier with a generous rate limit (600 requests per 5 minutes)
      `https://cs.abacusapps.us`, no trailing slash (needed for the logo
      image in emails)
    - `CH_API_KEY` — from step 3, as a **Secret**, not plain text (needed
-     for Year End syncing)
+     for Year End syncing, and also used by the RED-tasks email digest
+     below to refresh each client from Companies House before it sends)
    - `SUPABASE_SERVICE_ROLE_KEY` — from Supabase step 1.4 (the **service
      role** key, not the anon key — copy it as a **Secret**), needed only
      for the RED-tasks email digest below. Double-check the variable name
@@ -215,6 +216,16 @@ enough to trigger it:
 ```
 https://<your-site>/api/red-tasks-digest?key=<DIGEST_SECRET>
 ```
+
+Before building the list, it runs the same Companies House check as the
+Year End tab's "Check all" button for every company client (archiving any
+now-dissolved company, refreshing the confirmation statement date, and
+rolling the year end forward once accounts have been filed for the
+current cycle), so the digest reflects up-to-date dates rather than
+whatever was last synced from the app's UI. This needs `CH_API_KEY` to be
+set (see step 4 above); if it isn't, the digest still sends using
+whatever data is already on file. One client's Companies House check
+failing doesn't stop the rest of the sweep or the email.
 
 Visit that URL (with your real domain and the `DIGEST_SECRET` value you
 set in Cloudflare) once yourself to check it sends before relying on it —
