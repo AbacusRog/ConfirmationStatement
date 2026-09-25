@@ -135,7 +135,6 @@ export default function ScheduledPacks({ refreshKey }: { refreshKey: number }) {
   }
 
   if (items === null && !error) return null // hasn't loaded yet — nothing to show
-  if (!error && items && items.length === 0) return null // nothing scheduled
 
   return (
     <section className={card}>
@@ -147,6 +146,8 @@ export default function ScheduledPacks({ refreshKey }: { refreshKey: number }) {
       </div>
 
       {error && <p className="text-sm text-warn mb-2">Could not load scheduled emails: {error}</p>}
+
+      {!error && items && items.length === 0 && <p className="text-sm text-slate-650">Nothing currently scheduled.</p>}
 
       {items && items.length > 0 && (
         <ul className="divide-y divide-line">

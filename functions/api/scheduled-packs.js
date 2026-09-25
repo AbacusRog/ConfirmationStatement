@@ -80,11 +80,12 @@ export async function onRequestGet(context) {
   const pending = []
   for (const row of rows) {
     const data = await resendGet(row.resend_id, env)
-    // No last_event yet (or it's not there at all) means Resend is still
-    // holding it for later; anything else (sent, delivered, bounced,
-    // canceled, or the id no longer existing at all) means it's not
-    // scheduled any more, so it drops off the list.
-    const stillScheduled = data && !data.last_event
+    // Resend's own last_event is literally the string "scheduled" while an
+    // email is still waiting to go out (not null/empty as you might
+    // expect) — anything else (sent, delivered, bounced, canceled, or the
+    // id no longer existing at all) means it's not scheduled any more, so
+    // it drops off the list.
+    const stillScheduled = !!data && (data.last_event === 'scheduled' || !data.last_event)
     if (stillScheduled) {
       pending.push({
         id: row.id,
