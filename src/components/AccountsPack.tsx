@@ -12,6 +12,7 @@ import { toPence, gbp, longDate } from '../lib/pack/money'
 import { AML_OPTIONS, buildPackEmail, defaultSubject, type AmlId } from '../lib/pack/email'
 import { buildPaymentsPdf, paymentCards, paymentsFileName, paymentsTotal } from '../lib/pack/paymentsPdf'
 import { buildAccountsPack } from '../lib/pack/accountsPdf'
+import ScheduledPacks from './ScheduledPacks'
 
 type SlotKey = 'stat' | 'invoice' | 'letter'
 interface Upload {
@@ -96,6 +97,7 @@ export default function AccountsPack() {
   const [scheduleAt, setScheduleAt] = useState('') // datetime-local input value, local time
   const [scheduledFor, setScheduledFor] = useState('') // human-readable, set once sent, for the confirmation banner
   const [dragging, setDragging] = useState<SlotKey | 'sa' | null>(null)
+  const [scheduledPacksVersion, setScheduledPacksVersion] = useState(0)
   const clientKey = useRef(0)
 
   // ---------- client ----------
@@ -351,6 +353,21 @@ export default function AccountsPack() {
         throw new Error(msg)
       }
       if (scheduleDate) {
+        const sent = await res.json().catch(() => null)
+        if (sent?.id) {
+          // Best-effort — if this insert fails the email is still safely
+          // scheduled with Resend, it just won't show in the list below
+          // until a fix is made.
+          await supabase.from('cs_mailer_scheduled_packs').insert({
+            resend_id: sent.id,
+            client_id: client.id,
+            client_name: client.client_name,
+            to_email: email.trim(),
+            subject: subject.trim(),
+            scheduled_at: scheduleDate.toISOString(),
+          })
+          setScheduledPacksVersion((v) => v + 1)
+        }
         setScheduledFor(
           scheduleDate.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
         )
@@ -401,6 +418,8 @@ export default function AccountsPack() {
   // ---------- render ----------
   return (
     <div className="space-y-6">
+      <ScheduledPacks refreshKey={scheduledPacksVersion} />
+
       {/* 1. Client */}
       <section className={card}>
         <h2 className={h2}>1. Client</h2>

@@ -171,3 +171,31 @@ create policy "allow authenticated on cs_mailer_directors" on cs_mailer_director
   for all
   using (auth.role() = 'authenticated')
   with check (auth.role() = 'authenticated');
+
+-- Accounts Pack emails scheduled to send later via Resend's own scheduling
+-- (resend_id is the id Resend gave the email when it was created — that's
+-- what /api/scheduled-packs uses to reschedule or cancel it there). This
+-- table is just our own record of what's outstanding so it can be listed;
+-- Resend is what's actually holding and sending the email. A row is
+-- removed once /api/scheduled-packs notices, via Resend's own status for
+-- that id, that the email is no longer scheduled (sent or cancelled).
+create table if not exists cs_mailer_scheduled_packs (
+  id uuid primary key default gen_random_uuid(),
+  resend_id text not null unique,
+  client_id uuid references cs_mailer_clients(id) on delete set null,
+  client_name text not null,
+  to_email text not null,
+  subject text not null,
+  scheduled_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists cs_mailer_scheduled_packs_scheduled_at_idx on cs_mailer_scheduled_packs (scheduled_at);
+
+alter table cs_mailer_scheduled_packs enable row level security;
+
+drop policy if exists "allow authenticated on cs_mailer_scheduled_packs" on cs_mailer_scheduled_packs;
+create policy "allow authenticated on cs_mailer_scheduled_packs" on cs_mailer_scheduled_packs
+  for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');

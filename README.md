@@ -189,12 +189,21 @@ Turns a finished set of accounts into a client pack and emails it.
    to 30 days ahead) and Resend holds the email and sends it then. Either
    way it's sent through Resend with a BCC to you.
 
+   Anything scheduled shows up in a **Scheduled emails** panel at the top
+   of this tab, where you can change the date/time or cancel it — see
+   below.
+
 Notes:
 
-- A scheduled send can't be cancelled or changed from this app once
-  confirmed — Resend is holding it, not this app. If you need to cancel
-  one, that has to be done directly against the Resend API (`POST
-  /emails/{id}/cancel`) using the email id, or from the Resend dashboard.
+- Scheduled emails are listed, edited and cancelled through
+  `/api/scheduled-packs` (also requires sign-in), which talks to both
+  Resend (to actually move or cancel the send) and a small
+  `cs_mailer_scheduled_packs` table (just this app's own record of what's
+  outstanding, so it can be listed — Resend is what's actually holding and
+  sending each one). A row drops off the list on its own once Resend shows
+  the email as no longer scheduled, i.e. once it's actually gone out — no
+  separate cleanup needed. Needs the `supabase/schema.sql` update applied
+  (adds that one table) if you're updating an existing install.
 
 - Sending uses `/api/send-pack`, which **requires you to be signed in**
   (it checks your Supabase session). It needs `VITE_SUPABASE_URL` and
