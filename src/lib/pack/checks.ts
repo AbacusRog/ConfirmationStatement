@@ -114,16 +114,9 @@ export function buildChecks(stat: Statutory, sa: Sa100 | null, ct: CtInfo | null
       if (agrees) attn(`The employment page reports ${split}. This agrees with the SA302 total but should be checked against ${tail}.`)
       else attn(`The employment page reports ${split}, which does not agree to the SA302 pay figure of ${auto(payTotal.amount)}.`)
     }
-    // Director's salary in the accounts vs pay on the return
-    const salary = stat.trading.find((l) => l.kind === 'detail' && /director.?s?.? (salar|remuneration)/i.test(l.label))
-    if (salary && salary.cur != null && payTotal) {
-      const diff = salary.cur * 100 - payTotal.amount
-      if (diff === 0) ok(`The company accounts show directors' salaries of ${w(salary.cur)}, which agrees to the pay on the return.`)
-      else
-        attn(
-          `The company accounts show directors' salaries of ${w(salary.cur)} for the year ended ${stat.periodLabel || 'the year end'}. Reconcile the ${auto(Math.abs(diff))} difference from ${auto(payTotal.amount)} and the differing periods to payroll records.`,
-        )
-    }
+    // Note: deliberately no check comparing directors' salaries in the accounts
+    // against the pay on the personal return — the two figures cover different
+    // periods and are not expected to reconcile, so this is not raised.
   }
 
   // 7. Bank interest boxes

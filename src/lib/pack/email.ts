@@ -1,13 +1,15 @@
 // Builds the client email for the Accounts Pack. It runs in the browser so the
-// preview the user sees is exactly the HTML that is sent.
+// preview the user sees is exactly the HTML that is sent. The wording and
+// layout follow Roger's own example email as closely as the dynamic parts
+// (the file list, the AML line, the payments) allow.
 
-import { gbp, longDate, ordinal, type Pence } from './money'
+import { ordinal, type Pence } from './money'
 
 export const AML_OPTIONS = [
-  { id: 'passport', label: 'Passport', address: false },
-  { id: 'licence', label: 'Driving Licence', address: false },
-  { id: 'utility', label: 'Current Utility Bill or Mobile Phone Bill', address: true },
-  { id: 'bank', label: 'Personal Bank Statement', address: true },
+  { id: 'passport', label: 'Passport', phrase: 'an updated copy of your passport', address: false },
+  { id: 'licence', label: 'Driving Licence', phrase: 'an updated copy of your driving licence', address: false },
+  { id: 'utility', label: 'Current Utility Bill or Mobile Phone Bill', phrase: 'an updated utility bill or mobile phone bill', address: true },
+  { id: 'bank', label: 'Personal Bank Statement', phrase: 'a personal bank statement', address: true },
 ] as const
 export type AmlId = (typeof AML_OPTIONS)[number]['id']
 
@@ -31,37 +33,25 @@ export interface PackEmailInput {
   logoUrl: string
 }
 
-const C = {
-  ink: '#1F2933',
-  slate: '#5F6B7A',
-  navy: '#193650',
-  teal: '#2B7A78',
-  tealLight: '#E8F1F0',
-  paper: '#F4F6F8',
-  line: '#D5DBE1',
-  red: '#A61B1B',
-  redLight: '#FBE9E9',
-}
-
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const SERIF = "Georgia,'Times New Roman',serif"
-const SANS = 'Arial,Helvetica,sans-serif'
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 /** "Child And Family Advisory Service Limited - Period Ended 31st March 2026" */
 export function defaultSubject(companyName: string, periodEndISO: string | null): string {
   if (!periodEndISO) return companyName
-  const [y, , d] = periodEndISO.split('-').map(Number)
-  const month = longDate(periodEndISO).split(' ')[1]
-  return `${companyName} - Period Ended ${ordinal(d)} ${month} ${y}`
+  const [y, m, d] = periodEndISO.split('-').map(Number)
+  const monthName = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][m - 1]
+  return `${companyName} - Period Ended ${ordinal(d)} ${monthName} ${y}`
 }
 
-export function amlSentence(aml: AmlId[]): { intro: string; items: { label: string; note: string }[] } | null {
+/** "Can I please get an updated utility bill or personal bank statement showing your home address on it." */
+export function amlSentence(aml: AmlId[]): string | null {
   if (!aml.length) return null
   const chosen = AML_OPTIONS.filter((o) => aml.includes(o.id))
-  return {
-    intro: 'Can I please get clear copies of the following to keep my anti-money laundering records up to date:',
-    items: chosen.map((o) => ({ label: o.label, note: o.address ? 'showing your home address' : '' })),
-  }
+  const phrases = chosen.map((o) => o.phrase)
+  const list = phrases.length === 1 ? phrases[0] : `${phrases.slice(0, -1).join(', ')} or ${phrases[phrases.length - 1]}`
+  const hasAddress = chosen.some((o) => o.address)
+  return `Can I please get ${list}${hasAddress ? ' showing your home address on it' : ''}.`
 }
 
 export const SMARTVAULT_TEXT =
@@ -71,128 +61,67 @@ const closing = 'If you have any queries, then please do not hesitate to contact
 
 export function buildPackEmail(inp: PackEmailInput): { html: string; text: string } {
   const aml = amlSentence(inp.aml)
-  const hi = inp.forename.trim() ? `Hi ${inp.forename.trim()}` : 'Hello'
+  const hi = inp.forename.trim() ? `Hi ${inp.forename.trim()}` : 'Hi'
 
   // ---------- plain-text alternative ----------
   const t: string[] = [hi, '', 'Please find attached the following:-', '']
   inp.files.forEach((f) => t.push(`[${f.name}] – ${f.description}`))
-  if (inp.payments.length) {
-    t.push('', 'Payments due:')
-    inp.payments.forEach((p) => t.push(`${p.title}: ${gbp(p.amount)} due ${p.dueText}`))
-  }
   t.push('', 'Please read the covering letter, which explains what to do next.')
-  if (aml) {
-    t.push('', 'Money Laundering', aml.intro)
-    aml.items.forEach((i) => t.push(`- ${i.label}${i.note ? ` (${i.note})` : ''}`))
-  }
+  if (aml) t.push('', 'Money Laundering', aml)
   if (inp.smartVault) t.push('', 'SmartVault', SMARTVAULT_TEXT)
   t.push('', closing, '', 'Best Regards', '', 'Roger', '', 'Abacus Consultancy', 'PO Box 3653', 'Wokingham', 'RG40 9NN')
-  t.push('Tel: 0844 940 98 96 (Voicemail Only)', 'web: http://www.abacusconsultancy.co.uk')
+  t.push('Tel: 0844 940 98 96 (Voicemail Only)', 'Fax: 0844 940 98 90', '', 'web: http://www.abacusconsultancy.co.uk')
+  t.push('', 'Abacus Consultancy Services Limited. Company Number: 09582349')
+  t.push('Registered Office', 'Abacus Consultancy, PO Box 3653, Wokingham. RG40 9NN')
 
-  // ---------- HTML ----------
+  // ---------- HTML (same wording and order, laid out for an email) ----------
   const p = (inner: string, extra = '') =>
-    `<p style="margin:0 0 16px 0;font-family:${SERIF};font-size:15px;line-height:1.65;color:${C.ink};${extra}">${inner}</p>`
-  const h = (text: string) =>
-    `<div style="font-family:${SANS};font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:${C.teal};margin:0 0 8px 0;">${esc(text)}</div>`
+    `<p style="margin:0 0 16px 0;font-family:${SERIF};font-size:15px;line-height:1.6;color:#1F2933;${extra}">${inner}</p>`
 
-  const fileRows = inp.files
-    .map(
-      (f) => `
-      <tr>
-        <td width="44" style="padding:10px 0 10px 14px;border-top:1px solid ${C.line};vertical-align:middle;">
-          <div style="width:30px;height:36px;background-color:${C.navy};border-radius:3px;text-align:center;font-family:${SANS};font-size:9px;font-weight:bold;line-height:36px;color:#FFFFFF;">PDF</div>
-        </td>
-        <td style="padding:10px 14px 10px 8px;border-top:1px solid ${C.line};vertical-align:middle;">
-          <div style="font-family:${SANS};font-size:14px;font-weight:bold;color:${C.navy};">${esc(f.description)}</div>
-          <div style="font-family:${SANS};font-size:12px;color:${C.slate};margin-top:2px;">${esc(f.name)}</div>
-        </td>
-      </tr>`,
-    )
-    .join('')
+  const fileLines = inp.files.map((f) => `[${esc(f.name)}] &ndash; ${esc(f.description)}`).join('<br>')
 
-  const paymentsBox = inp.payments.length
-    ? `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px 0;">
-      <tr><td style="background-color:${C.redLight};border:1px solid #F0C4C4;border-radius:6px;padding:14px 18px;">
-        <div style="font-family:${SANS};font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:${C.red};margin-bottom:8px;">Payments due</div>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-          ${inp.payments
-            .map(
-              (x) => `<tr>
-            <td style="padding:3px 0;font-family:${SANS};font-size:14px;color:${C.ink};">${esc(x.title)}<span style="color:${C.slate};font-size:12px;"> &middot; due ${esc(x.dueText)}</span></td>
-            <td align="right" style="padding:3px 0;font-family:${SANS};font-size:15px;font-weight:bold;color:${C.red};">${gbp(x.amount)}</td>
-          </tr>`,
-            )
-            .join('')}
-        </table>
-        <div style="font-family:${SANS};font-size:12px;color:${C.slate};margin-top:8px;">Full payment details and references are in the Information Sheet.</div>
-      </td></tr>
-    </table>`
+  const amlHtml = aml
+    ? `${p('<strong>Money Laundering</strong>', 'margin-bottom:4px;')}${p(esc(aml))}`
     : ''
-
-  const amlBlock = aml
-    ? `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px 0;">
-      <tr><td style="border-left:4px solid ${C.teal};background-color:${C.tealLight};padding:14px 18px;border-radius:0 6px 6px 0;">
-        ${h('Money Laundering')}
-        <div style="font-family:${SERIF};font-size:15px;line-height:1.6;color:${C.ink};margin-bottom:6px;">${esc(aml.intro)}</div>
-        <ul style="margin:0;padding:0 0 0 20px;font-family:${SERIF};font-size:15px;line-height:1.7;color:${C.ink};">
-          ${aml.items.map((i) => `<li>${esc(i.label)}${i.note ? ` <span style="color:${C.slate};">&ndash; ${esc(i.note)}</span>` : ''}</li>`).join('')}
-        </ul>
-      </td></tr>
-    </table>`
-    : ''
-
-  const smartBlock = inp.smartVault
-    ? `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px 0;">
-      <tr><td style="border:1px solid ${C.line};border-radius:6px;padding:14px 18px;">
-        ${h('SmartVault')}
-        <div style="font-family:${SERIF};font-size:15px;line-height:1.6;color:${C.ink};">${esc(SMARTVAULT_TEXT)}</div>
-      </td></tr>
-    </table>`
+  const smartHtml = inp.smartVault
+    ? `${p('<strong>SmartVault</strong>', 'margin-bottom:4px;')}${p(esc(SMARTVAULT_TEXT))}`
     : ''
 
   const logo = inp.logoUrl
-    ? `<img src="${esc(inp.logoUrl)}" width="220" alt="Abacus Consultancy" style="display:block;border:0;max-width:220px;height:auto;">`
-    : `<div style="font-family:${SERIF};font-size:19px;color:${C.navy};">Abacus Consultancy</div>`
+    ? `<img src="${esc(inp.logoUrl)}" width="200" alt="Abacus Consultancy" style="display:block;border:0;max-width:200px;height:auto;margin-bottom:18px;">`
+    : ''
 
   const html = `<!doctype html>
 <html>
-  <body style="margin:0;padding:0;background-color:${C.paper};">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:${C.paper};padding:28px 12px;">
+  <body style="margin:0;padding:0;background-color:#FFFFFF;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
       <tr><td align="center">
-        <table role="presentation" width="620" cellpadding="0" cellspacing="0" style="max-width:620px;width:100%;background-color:#FFFFFF;border:1px solid ${C.line};border-radius:8px;overflow:hidden;">
-          <tr><td style="background-color:${C.navy};height:6px;line-height:6px;font-size:0;">&nbsp;</td></tr>
-          <tr><td style="padding:24px 32px 6px 32px;">${logo}</td></tr>
-          <tr><td style="padding:14px 32px 30px 32px;">
-            ${p(esc(hi), 'font-size:17px;margin-bottom:10px;')}
-            ${p('Please find attached the following:-', 'margin-bottom:12px;')}
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px 0;border-bottom:1px solid ${C.line};">
-              ${fileRows.replace(/^\s*<tr>/, '<tr>')}
-            </table>
-            ${paymentsBox}
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px 0;">
-              <tr><td style="background-color:${C.navy};border-radius:6px;padding:14px 18px;font-family:${SERIF};font-size:15px;line-height:1.5;color:#FFFFFF;">
-                <strong>Please read the covering letter,</strong> which explains what to do next.
-              </td></tr>
-            </table>
-            ${amlBlock}
-            ${smartBlock}
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+          <tr><td style="padding:28px 24px;">
+            ${logo}
+            ${p(esc(hi))}
+            ${p('Please find attached the following:-')}
+            ${p(fileLines)}
+            ${p('Please read the covering letter, which explains what to do next.')}
+            ${amlHtml}
+            ${smartHtml}
             ${p(esc(closing))}
             ${p('Best Regards', 'margin-bottom:4px;')}
-            ${p('Roger', 'margin-bottom:0;')}
-          </td></tr>
-          <tr><td style="padding:18px 32px 24px 32px;border-top:1px solid ${C.line};background-color:#FBFCFD;">
-            <div style="font-family:${SANS};font-size:12px;line-height:1.6;color:${C.slate};">
-              <strong style="color:${C.navy};">Abacus Consultancy</strong><br>
-              PO Box 3653, Wokingham, RG40 9NN<br>
-              Tel: 0844 940 98 96 (Voicemail Only) &middot; Fax: 0844 940 98 90<br>
-              <a href="http://www.abacusconsultancy.co.uk" style="color:${C.teal};">www.abacusconsultancy.co.uk</a>
+            ${p('Roger', 'margin-bottom:20px;')}
+            <div style="font-family:${SERIF};font-size:13px;line-height:1.6;color:#1F2933;">
+              Abacus Consultancy<br>
+              PO Box 3653<br>
+              Wokingham<br>
+              RG40 9NN<br>
+              Tel: 0844 940 98 96 (Voicemail Only)<br>
+              Fax: 0844 940 98 90<br>
+              <br>
+              web: <a href="http://www.abacusconsultancy.co.uk" style="color:#1F2933;">http://www.abacusconsultancy.co.uk</a>
             </div>
-            <div style="font-family:${SANS};font-size:11px;line-height:1.5;color:#8792A0;margin-top:12px;">
+            <div style="font-family:${SERIF};font-size:11px;line-height:1.6;color:#5F6B7A;margin-top:18px;">
               Abacus Consultancy Services Limited. Company Number: 09582349<br>
-              Registered Office: Abacus Consultancy, PO Box 3653, Wokingham. RG40 9NN
+              Registered Office<br>
+              Abacus Consultancy, PO Box 3653, Wokingham. RG40 9NN
             </div>
           </td></tr>
         </table>
