@@ -67,7 +67,7 @@ export function buildPackEmail(inp: PackEmailInput): { html: string; text: strin
   const t: string[] = [hi, '', 'Please find attached the following:-', '']
   inp.files.forEach((f) => t.push(`[${f.name}] – ${f.description}`))
   t.push('', 'Please read the covering letter, which explains what to do next.')
-  if (aml) t.push('', 'Money Laundering', aml)
+  if (aml) t.push('', 'Anti-Money Laundering', aml)
   if (inp.smartVault) t.push('', 'SmartVault', SMARTVAULT_TEXT)
   t.push('', closing, '', 'Best Regards', '', 'Roger', '', 'Abacus Consultancy', 'PO Box 3653', 'Wokingham', 'RG40 9NN')
   t.push('Tel: 0844 940 98 96 (Voicemail Only)', 'Fax: 0844 940 98 90', '', 'web: http://www.abacusconsultancy.co.uk')
@@ -78,14 +78,22 @@ export function buildPackEmail(inp: PackEmailInput): { html: string; text: strin
   const p = (inner: string, extra = '') =>
     `<p style="margin:0 0 16px 0;font-family:${SERIF};font-size:15px;line-height:1.6;color:#1F2933;${extra}">${inner}</p>`
 
-  const fileLines = inp.files.map((f) => `[${esc(f.name)}] &ndash; ${esc(f.description)}`).join('<br>')
+  // File names in the attachment list, and the "Anti-Money Laundering" /
+  // "SmartVault" section headers, are coloured and highlighted the same
+  // way Roger's own template marks them up — red filenames, and a yellow
+  // highlighter behind a bold red heading.
+  const RED = '#FF0000'
+  const HIGHLIGHT = '#FFFF00'
+  const redSpan = (inner: string) => `<span style="color:${RED};">${inner}</span>`
+  const highlightHeader = (inner: string) =>
+    p(`<strong style="background-color:${HIGHLIGHT};color:${RED};">${inner}</strong>`, 'margin-bottom:4px;')
 
-  const amlHtml = aml
-    ? `${p('<strong>Money Laundering</strong>', 'margin-bottom:4px;')}${p(esc(aml))}`
-    : ''
-  const smartHtml = inp.smartVault
-    ? `${p('<strong>SmartVault</strong>', 'margin-bottom:4px;')}${p(esc(SMARTVAULT_TEXT))}`
-    : ''
+  const fileLines = inp.files
+    .map((f) => `[${redSpan(esc(f.name))}] &ndash; ${esc(f.description)}`)
+    .join('<br>')
+
+  const amlHtml = aml ? `${highlightHeader('Anti-Money Laundering')}${p(esc(aml))}` : ''
+  const smartHtml = inp.smartVault ? `${highlightHeader('SmartVault')}${p(esc(SMARTVAULT_TEXT))}` : ''
 
   const logo = inp.logoUrl
     ? `<img src="${esc(inp.logoUrl)}" width="200" alt="Abacus Consultancy" style="display:block;border:0;max-width:200px;height:auto;margin-bottom:18px;">`
