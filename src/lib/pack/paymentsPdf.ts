@@ -235,7 +235,9 @@ export async function buildPaymentsPdf(inp: PaymentsInput): Promise<Uint8Array> 
     if (sa.utr) saRows.push(['Self Assessment reference', `${sa.utr}K`])
     if (sa.name) saRows.push(['Client', sa.name])
     if (sa.utr) saRows.push(['UTR', sa.utr])
-    content.push({ ...kvTable(saRows, 150), margin: [0, 6, 0, 0], unbreakable: true })
+    // An empty table body crashes pdfmake's layout engine, so only add this
+    // block when the return actually gave us a name or UTR to show.
+    if (saRows.length) content.push({ ...kvTable(saRows, 150), margin: [0, 6, 0, 0], unbreakable: true })
   }
   if (anySa) {
     content.push(link('GOV.UK: Self Assessment payment guidance', LINKS.saGuide))

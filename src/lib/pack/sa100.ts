@@ -130,15 +130,30 @@ export function parseSa100(pages: TPage[]): Sa100 {
         out.taxYear = `${y - 1}-${String(y).slice(2)}`
       }
     }
-    const hdrIdx = p1.lines.findIndex((l) => /NI Number/.test(l.text) && /Agent Reference/.test(l.text))
-    if (hdrIdx >= 0 && p1.lines[hdrIdx + 1]) {
-      const it = p1.lines[hdrIdx + 1].items
-      if (it.length >= 4) {
-        out.name = it[0].str.trim()
-        out.utr = it[1].str.trim()
-        out.nino = it[2].str.trim()
-        out.agentRef = it[3].str.trim()
-      }
+    // The Name / UTR / NI Number / Agent Reference row sits just below this
+    // header. It is usually one text line, but the name can render on a
+    // slightly different baseline from the other three values (a few points
+    // apart — not enough to be a new row, but enough that pdf.js reports it
+    // as a separate line), so this reads the row by column position across
+    // every item in a short window below the header rather than assuming a
+    // single line holds all four values.
+    const hdrLine = p1.lines.find((l) => /NI Number/.test(l.text) && /Agent Reference/.test(l.text))
+    if (hdrLine && hdrLine.items.length >= 4) {
+      const cols = [...hdrLine.items].sort((a, b) => a.x0 - b.x0).slice(0, 4)
+      const bounds = cols.map((c, i) => ({ x0: c.x0 - 10, x1: i + 1 < cols.length ? cols[i + 1].x0 - 10 : Infinity }))
+      const rowItems = flat(p1).filter((it) => it.y < hdrLine.y - 2 && it.y > hdrLine.y - 26)
+      const values = bounds.map((b) =>
+        rowItems
+          .filter((it) => it.x0 >= b.x0 && it.x0 < b.x1)
+          .sort((a, b2) => b2.y - a.y || a.x0 - b2.x0)
+          .map((it) => it.str.trim())
+          .join(' ')
+          .trim(),
+      )
+      out.name = values[0] || null
+      out.utr = values[1] || null
+      out.nino = values[2] || null
+      out.agentRef = values[3] || null
     }
   }
   if (!out.utr) warnings.push('Could not read the UTR from the tax return.')
