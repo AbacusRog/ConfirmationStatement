@@ -1,9 +1,15 @@
 // Rule-based sense-checks across the statutory accounts, the corporation tax
-// figures and the Self Assessment return. Each check is only raised when the
-// data it needs is present, and reports the actual figures involved.
+// figures and the Self Assessment return(s). Each check is only raised when
+// the data it needs is present, and reports the actual figures involved.
+//
+// A pack can carry more than one personal tax return (for example both
+// directors). Checks 6-10 below are personal to a return and run once per
+// return; when there is more than one, the check text is prefixed with that
+// person's first name so it's clear which return it refers to.
 
 import type { Statutory } from './statutory'
 import type { Sa100 } from './sa100'
+import { personFirstName } from './sa100'
 import { gbp, gbpWhole, type Pence } from './money'
 
 export interface CtInfo {
@@ -22,7 +28,7 @@ const auto = (p: Pence) => (p % 100 === 0 ? gbp(p, { pence: false }) : gbp(p))
 const w = (n: number) => gbpWhole(n)
 const signedW = (n: number) => (n < 0 ? `-${w(Math.abs(n))}` : w(n))
 
-/** UK dividends on the personal return, in whole pounds (null when there are none or no return). */
+/** UK dividends on one personal return, in whole pounds (null when there are none or no return). */
 export function personalDividends(sa: Sa100 | null): number | null {
   if (!sa) return null
   if (sa.ukDividendsBox != null) return Math.round(sa.ukDividendsBox / 100)
@@ -30,11 +36,19 @@ export function personalDividends(sa: Sa100 | null): number | null {
   return d ? Math.round(d.amount / 100) : null
 }
 
-export function buildChecks(stat: Statutory, sa: Sa100 | null, ct: CtInfo | null): Check[] {
+/** Total UK dividends across every personal return supplied (null when none report any). */
+export function totalPersonalDividends(saList: Sa100[]): number | null {
+  const vals = saList.map(personalDividends).filter((n): n is number => n != null)
+  return vals.length ? vals.reduce((a, n) => a + n, 0) : null
+}
+
+export function buildChecks(stat: Statutory, saList: Sa100[], ct: CtInfo | null): Check[] {
   const f = stat.figures
   const out: Check[] = []
   const ok = (text: string) => out.push({ tone: 'ok', text })
   const attn = (text: string) => out.push({ tone: 'attention', text })
+  const multi = saList.length > 1
+  const tag = (sa: Sa100, text: string) => (multi ? `${personFirstName(sa) || 'The return'}: ${text}` : text)
 
   // 1. Company arithmetic
   if (f.turnover && f.pbt) {
@@ -75,16 +89,16 @@ export function buildChecks(stat: Statutory, sa: Sa100 | null, ct: CtInfo | null
     else attn('Balance sheet arithmetic does not agree. Re-check the balance sheet subtotals.')
   }
 
-  // 4. Net assets movement vs profit and dividends
-  const divPounds = personalDividends(sa)
+  // 4. Net assets movement vs profit and dividends (dividends summed across every return)
+  const divPounds = totalPersonalDividends(saList)
   if (f.netAssets && f.netProfit) {
     const change = f.netAssets[0] - f.netAssets[1]
     const outside = change - f.netProfit[0]
     if (Math.abs(outside) > 1) {
       const posNeg = (n: number) => `${w(Math.abs(n))} ${n < 0 ? 'negative' : 'positive'}`
       const move = `Net assets moved from ${posNeg(f.netAssets[1])} to ${posNeg(f.netAssets[0])}, a ${w(Math.abs(change))} ${change < 0 ? 'reduction' : 'increase'} against post-tax profit of ${w(f.netProfit[0])}. This indicates a ${w(Math.abs(outside))} movement outside profit and loss`
-      if (divPounds != null && Math.abs(Math.abs(outside) - divPounds) <= 1 && outside < 0) ok(`${move}, matching the personal dividend.`)
-      else if (divPounds != null) attn(`${move}, which does not match the ${w(divPounds)} of dividends on the personal return. Establish what the movement is.`)
+      if (divPounds != null && Math.abs(Math.abs(outside) - divPounds) <= 1 && outside < 0) ok(`${move}, matching the personal dividend${divPounds && saList.length > 1 ? 's' : ''}.`)
+      else if (divPounds != null) attn(`${move}, which does not match the ${w(divPounds)} of dividends on the personal return${saList.length > 1 ? 's' : ''}. Establish what the movement is.`)
       else attn(`${move}. Establish what it is (for example dividends or a director's loan).`)
     }
   }
@@ -98,76 +112,75 @@ export function buildChecks(stat: Statutory, sa: Sa100 | null, ct: CtInfo | null
           `Dividends of ${w(divPounds)} exceed the reserves available before dividends (opening net assets of ${signedW(f.netAssets[1])} plus profit of ${w(f.netProfit[0])} is ${signedW(available)}) by ${w(divPounds - available)}. Confirm distributable reserves at the date each dividend was declared and how any excess is to be treated.`,
         )
     }
-    attn(`The personal return reports ${w(divPounds)} dividends. Check against dividend vouchers, board approval and company reserves.`)
+    attn(`The personal return${saList.length > 1 ? 's report' : ' reports'} ${w(divPounds)} dividends in total. Check against dividend vouchers, board approval and company reserves.`)
   }
 
-  // 6. Employment
-  if (sa && sa.sa302) {
-    const payTotal = sa.sa302.income.find((i) => /pay from all employments/i.test(i.label))
-    const emp = sa.employment
-    if (payTotal && emp.length) {
-      const pay = emp.reduce((a, e) => a + (e.pay ?? 0), 0)
-      const tips = emp.reduce((a, e) => a + (e.tips ?? 0), 0)
-      const agrees = pay + tips === payTotal.amount
-      const split = tips > 0 ? `${auto(pay)} pay plus ${auto(tips)} tips/other payments, totalling ${auto(pay + tips)}` : `${auto(pay)} pay`
-      const tail = tips > 0 ? `payroll/P60 and the nature of the ${auto(tips)} amount` : 'payroll/P60'
-      if (agrees) attn(`The employment page reports ${split}. This agrees with the SA302 total but should be checked against ${tail}.`)
-      else attn(`The employment page reports ${split}, which does not agree to the SA302 pay figure of ${auto(payTotal.amount)}.`)
+  // Checks 6-10 are personal to a return, so run once per return supplied.
+  for (const sa of saList) {
+    // 6. Employment
+    if (sa.sa302) {
+      const payTotal = sa.sa302.income.find((i) => /pay from all employments/i.test(i.label))
+      const emp = sa.employment
+      if (payTotal && emp.length) {
+        const pay = emp.reduce((a, e) => a + (e.pay ?? 0), 0)
+        const tips = emp.reduce((a, e) => a + (e.tips ?? 0), 0)
+        const agrees = pay + tips === payTotal.amount
+        const split = tips > 0 ? `${auto(pay)} pay plus ${auto(tips)} tips/other payments, totalling ${auto(pay + tips)}` : `${auto(pay)} pay`
+        const tail = tips > 0 ? `payroll/P60 and the nature of the ${auto(tips)} amount` : 'payroll/P60'
+        if (agrees) attn(tag(sa, `The employment page reports ${split}. This agrees with the SA302 total but should be checked against ${tail}.`))
+        else attn(tag(sa, `The employment page reports ${split}, which does not agree to the SA302 pay figure of ${auto(payTotal.amount)}.`))
+      }
+      // Note: deliberately no check comparing directors' salaries in the accounts
+      // against the pay on the personal return — the two figures cover different
+      // periods and are not expected to reconcile, so this is not raised.
     }
-    // Note: deliberately no check comparing directors' salaries in the accounts
-    // against the pay on the personal return — the two figures cover different
-    // periods and are not expected to reconcile, so this is not raised.
-  }
 
-  // 7. Bank interest boxes
-  if (sa && sa.interest.taxedUk == null && sa.interest.untaxedUk == null && sa.interest.foreign == null)
-    attn('No personal bank interest is reported. The taxed UK, untaxed UK and foreign-interest boxes are blank. Confirm against all bank and building society records.')
+    // 7. Bank interest boxes
+    if (sa.interest.taxedUk == null && sa.interest.untaxedUk == null && sa.interest.foreign == null)
+      attn(tag(sa, 'No personal bank interest is reported. The taxed UK, untaxed UK and foreign-interest boxes are blank. Confirm against all bank and building society records.'))
 
-  // 8. Personal tax calculation
-  if (sa?.sa302 && sa.sa302.totalIncome != null && sa.sa302.personalAllowance != null && sa.sa302.taxable != null && sa.sa302.incomeTax != null) {
-    const s = sa.sa302
-    const taxableOk = s.totalIncome! - s.personalAllowance! === s.taxable
-    const bandsOk = s.bands.length > 0 && s.bands.every((b) => Math.abs(Math.round((b.amount * b.rate) / 100) - b.tax) <= 1)
-    const sumOk = s.bands.reduce((a, b) => a + b.tax, 0) === s.incomeTax
-    if (taxableOk && bandsOk && sumOk) {
-      const bandText = s.bands
-        .map((b, i) => `${auto(b.amount)}${i === 0 && /dividend/i.test(b.group) ? ' dividends' : ''} at ${b.rate}%`)
-        .join(' and ')
-      ok(`The personal tax calculation agrees: ${auto(s.totalIncome!)} total income less ${auto(s.personalAllowance!)} Personal Allowance leaves ${auto(s.taxable!)} taxable; ${bandText} gives ${auto(s.incomeTax!)}.`)
-    } else attn('The personal tax calculation on the SA302 does not reconcile (allowance, bands or total). Re-check the calculation.')
-  }
+    // 8. Personal tax calculation
+    if (sa.sa302 && sa.sa302.totalIncome != null && sa.sa302.personalAllowance != null && sa.sa302.taxable != null && sa.sa302.incomeTax != null) {
+      const s = sa.sa302
+      const taxableOk = s.totalIncome! - s.personalAllowance! === s.taxable
+      const bandsOk = s.bands.length > 0 && s.bands.every((b) => Math.abs(Math.round((b.amount * b.rate) / 100) - b.tax) <= 1)
+      const sumOk = s.bands.reduce((a, b) => a + b.tax, 0) === s.incomeTax
+      if (taxableOk && bandsOk && sumOk) {
+        const bandText = s.bands
+          .map((b, i) => `${auto(b.amount)}${i === 0 && /dividend/i.test(b.group) ? ' dividends' : ''} at ${b.rate}%`)
+          .join(' and ')
+        ok(tag(sa, `The personal tax calculation agrees: ${auto(s.totalIncome!)} total income less ${auto(s.personalAllowance!)} Personal Allowance leaves ${auto(s.taxable!)} taxable; ${bandText} gives ${auto(s.incomeTax!)}.`))
+      } else attn(tag(sa, 'The personal tax calculation on the SA302 does not reconcile (allowance, bands or total). Re-check the calculation.'))
+    }
 
-  // 9. Payments on account
-  if (sa?.position) {
-    const p = sa.position
-    const bad = p.lessLines.filter((l) => l.described != null && l.described !== l.amount)
-    const credit = p.balance && p.balance.amount < 0 ? -p.balance.amount : null
-    const jan = p.groups[0]
-    if (bad.length) {
-      const described = p.lessLines.map((l) => (l.described != null ? auto(l.described) : auto(l.amount)))
-      const used = p.lessLines.map((l) => auto(l.amount))
-      const total = p.lessLines.reduce((a, l) => a + l.amount, 0)
-      attn(
-        `The return describes prior payments as ${described.join(' and ')}, but the arithmetic column uses ${used.join(' and ')}, totalling ${auto(total)}. Verify the actual HMRC payment before relying on ${credit != null ? `the ${auto(credit)} credit` : 'the balance shown'}${jan ? ` and the ${auto(jan.total)} ${jan.heading.split(' ')[1] ?? ''} payment` : ''}.`,
-      )
-    } else if (p.lessLines.length) ok('The prior payments on account described on the return agree to the amounts used in the calculation.')
-  }
+    // 9. Payments on account
+    if (sa.position) {
+      const p = sa.position
+      const bad = p.lessLines.filter((l) => l.described != null && l.described !== l.amount)
+      const credit = p.balance && p.balance.amount < 0 ? -p.balance.amount : null
+      const jan = p.groups[0]
+      if (bad.length) {
+        const described = p.lessLines.map((l) => (l.described != null ? auto(l.described) : auto(l.amount)))
+        const used = p.lessLines.map((l) => auto(l.amount))
+        const total = p.lessLines.reduce((a, l) => a + l.amount, 0)
+        attn(
+          tag(
+            sa,
+            `The return describes prior payments as ${described.join(' and ')}, but the arithmetic column uses ${used.join(' and ')}, totalling ${auto(total)}. Verify the actual HMRC payment before relying on ${credit != null ? `the ${auto(credit)} credit` : 'the balance shown'}${jan ? ` and the ${auto(jan.total)} ${jan.heading.split(' ')[1] ?? ''} payment` : ''}.`,
+          ),
+        )
+      } else if (p.lessLines.length) ok(tag(sa, 'The prior payments on account described on the return agree to the amounts used in the calculation.'))
+    }
 
-  // 10. Address wording
-  if (sa && sa.issueAddress.length > 1) {
-    for (let i = 1; i < sa.issueAddress.length; i++) {
-      if (sa.issueAddress[i].toLowerCase() === sa.issueAddress[i - 1].toLowerCase()) {
-        attn(`The address repeats “${sa.issueAddress[i]}”. Confirm the correct postal wording.`)
-        break
+    // 10. Address wording
+    if (sa.issueAddress.length > 1) {
+      for (let i = 1; i < sa.issueAddress.length; i++) {
+        if (sa.issueAddress[i].toLowerCase() === sa.issueAddress[i - 1].toLowerCase()) {
+          attn(tag(sa, `The address repeats “${sa.issueAddress[i]}”. Confirm the correct postal wording.`))
+          break
+        }
       }
     }
-  }
-
-  // 11. Engagement letter date blank in the accountant's report
-  const rep = stat.sections.find((s) => /accountant.?s report/i.test(s.title))
-  if (rep) {
-    const text = rep.blocks.flatMap((b) => (b.type === 'para' ? b.lines : [])).join(' ')
-    if (/engagement letter dated\s*[,.;]/i.test(text)) attn('The accountant’s report refers to an engagement letter but leaves the date blank.')
   }
 
   // Attention items first, then the checks that agree.
@@ -185,4 +198,3 @@ export function defaultCtDue(periodEndISO: string | null): string | null {
   const dt = new Date(Date.UTC(ny, nm, Math.min(d, last) + 1))
   return dt.toISOString().slice(0, 10)
 }
-

@@ -4,19 +4,24 @@ import ClientSearch from './ClientSearch'
 import { extractPdf } from '../lib/pack/pdfText'
 import { loadPdfJs } from '../lib/pack/pdfjsBrowser'
 import { parseStatutory, modelWords, compareWords, type Statutory } from '../lib/pack/statutory'
-import { parseSa100, type Sa100 } from '../lib/pack/sa100'
+import { parseSa100, personName, type Sa100 } from '../lib/pack/sa100'
 import { parseInvoice, parseLetter, type InvoiceInfo } from '../lib/pack/docs'
 import { buildReview } from '../lib/pack/review'
-import { buildChecks, defaultCtDue, personalDividends, type CtInfo } from '../lib/pack/checks'
+import { buildChecks, defaultCtDue, totalPersonalDividends, type CtInfo } from '../lib/pack/checks'
 import { toPence, gbp, longDate } from '../lib/pack/money'
 import { AML_OPTIONS, buildPackEmail, defaultSubject, type AmlId } from '../lib/pack/email'
-import { buildPaymentsPdf, fileStem, paymentCards, paymentsTotal } from '../lib/pack/paymentsPdf'
+import { buildPaymentsPdf, paymentCards, paymentsFileName, paymentsTotal } from '../lib/pack/paymentsPdf'
 import { buildAccountsPack } from '../lib/pack/accountsPdf'
 
-type SlotKey = 'stat' | 'sa' | 'invoice' | 'letter'
+type SlotKey = 'stat' | 'invoice' | 'letter'
 interface Upload {
   name: string
   bytes: Uint8Array
+}
+interface SaEntry {
+  id: string
+  file: Upload
+  sa: Sa100
 }
 interface Generated {
   accounts: Uint8Array
@@ -27,7 +32,6 @@ interface Generated {
 
 const SLOTS: { key: SlotKey; label: string; hint: string; needed: string }[] = [
   { key: 'stat', label: 'Statutory accounts', hint: 'e.g. Accounts 2026 Statutory.pdf', needed: 'Needed to build the pack' },
-  { key: 'sa', label: 'Self Assessment return', hint: 'e.g. Zummo, Daniela SA100 2026.pdf', needed: 'Needed for the tax payments sheet' },
   { key: 'invoice', label: 'Invoice', hint: 'e.g. Invoice 4368.pdf', needed: 'Attached to the email' },
   { key: 'letter', label: 'Covering letter', hint: 'e.g. Accounts 2026 Letter.pdf', needed: 'Attached to the email; fills in the Corporation Tax details' },
 ]
@@ -39,6 +43,7 @@ const card = 'rounded-md border border-line bg-white p-4'
 const h2 = 'font-serif text-lg text-ink mb-3'
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+const newId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`)
 
 function toBase64(bytes: Uint8Array): string {
   let s = ''
@@ -61,10 +66,12 @@ export default function AccountsPack() {
 
   const [uploads, setUploads] = useState<Partial<Record<SlotKey, Upload>>>({})
   const [stat, setStat] = useState<Statutory | null>(null)
-  const [sa, setSa] = useState<Sa100 | null>(null)
+  const [saEntries, setSaEntries] = useState<SaEntry[]>([])
   const [invoice, setInvoice] = useState<InvoiceInfo | null>(null)
   const [slotError, setSlotError] = useState<Partial<Record<SlotKey, string>>>({})
   const [reading, setReading] = useState<SlotKey | null>(null)
+  const [saError, setSaError] = useState('')
+  const [readingSa, setReadingSa] = useState(false)
 
   const [ctAmount, setCtAmount] = useState('')
   const [ctRef, setCtRef] = useState('')
@@ -85,7 +92,7 @@ export default function AccountsPack() {
   const [sending, setSending] = useState(false)
   const [sendState, setSendState] = useState<'idle' | 'sent' | 'error'>('idle')
   const [sendError, setSendError] = useState('')
-  const [dragging, setDragging] = useState<SlotKey | null>(null)
+  const [dragging, setDragging] = useState<SlotKey | 'sa' | null>(null)
   const clientKey = useRef(0)
 
   // ---------- client ----------
@@ -98,13 +105,14 @@ export default function AccountsPack() {
     setConfirming(false)
   }
 
-  // Fall back to the name on the tax return when the client has no forename on file.
+  // Fall back to the name on the first tax return when the client has no forename on file.
   useEffect(() => {
-    if (!client || forename || !sa?.name) return
-    const parts = sa.name.replace(/^(mr|mrs|ms|miss|dr|mx)\.?\s+/i, '').split(/\s+/)
+    const first = saEntries[0]?.sa.name
+    if (!client || forename || !first) return
+    const parts = first.replace(/^(mr|mrs|ms|miss|dr|mx)\.?\s+/i, '').split(/\s+/)
     if (parts[0]) setForename(parts[0])
     if (!surname && parts.length > 1) setSurname(parts.slice(1).join(' '))
-  }, [client, sa]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [client, saEntries]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- reading uploads ----------
   async function handleFile(key: SlotKey, file: File | undefined) {
@@ -127,10 +135,6 @@ export default function AccountsPack() {
         setStat(s)
         setSubject(defaultSubject(s.companyName, s.periodEnd))
         setCtDue((d) => d || defaultCtDue(s.periodEnd) || '')
-      } else if (key === 'sa') {
-        const r = parseSa100(pages)
-        if (!r.utr && !r.position && !r.sa302) throw new Error('This does not look like a Self Assessment return.')
-        setSa(r)
       } else if (key === 'invoice') {
         setInvoice(parseInvoice(pages))
       } else {
@@ -155,9 +159,39 @@ export default function AccountsPack() {
       return n
     })
     if (key === 'stat') setStat(null)
-    if (key === 'sa') setSa(null)
     if (key === 'invoice') setInvoice(null)
     if (key === 'letter') setCtFromLetter(false)
+    setGenerated(null)
+    setConfirming(false)
+  }
+
+  // ---------- tax returns (one or more) ----------
+  async function handleSaFile(file: File | undefined) {
+    if (!file) return
+    setSaError('')
+    if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
+      setSaError('Please choose a PDF file.')
+      return
+    }
+    setReadingSa(true)
+    setGenerated(null)
+    setConfirming(false)
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const pages = await extractPdf(await loadPdfJs(), bytes)
+      if (!pages.length || pages.every((p) => !p.lines.length)) throw new Error('No text could be read from this PDF (is it a scan?).')
+      const r = parseSa100(pages)
+      if (!r.utr && !r.position && !r.sa302) throw new Error('This does not look like a Self Assessment return.')
+      setSaEntries((prev) => [...prev, { id: newId(), file: { name: file.name, bytes }, sa: r }])
+    } catch (e) {
+      setSaError(e instanceof Error ? e.message : 'Could not read this file.')
+    } finally {
+      setReadingSa(false)
+    }
+  }
+
+  function removeSa(id: string) {
+    setSaEntries((prev) => prev.filter((e) => e.id !== id))
     setGenerated(null)
     setConfirming(false)
   }
@@ -169,26 +203,34 @@ export default function AccountsPack() {
     return { amount, reference: ctRef.trim(), dueISO: ctDue }
   }, [ctAmount, ctRef, ctDue])
 
-  const checks = useMemo(() => (stat ? buildChecks(stat, sa, ct) : []), [stat, sa, ct])
+  const saList = useMemo(() => saEntries.map((e) => e.sa), [saEntries])
+  const checks = useMemo(() => (stat ? buildChecks(stat, saList, ct) : []), [stat, saList, ct])
   const completeness = useMemo(() => (stat ? compareWords(stat.sourceWords, modelWords(stat.sections)) : null), [stat])
-  const cards = useMemo(() => paymentCards(sa, ct), [sa, ct])
+  const cards = useMemo(() => paymentCards(saList, ct), [saList, ct])
 
   const accountsName = stat ? `Accounts ${(stat.periodEnd ?? '').slice(0, 4) || ''}.pdf`.replace('Accounts .pdf', 'Accounts.pdf') : 'Accounts.pdf'
-  const paymentsName = sa?.name && sa.taxYear ? `${fileStem(sa.name)}_${sa.taxYear}_Tax_Payments.pdf` : 'Tax_Payments.pdf'
+  const paymentsName = stat ? paymentsFileName(stat, saList) : 'Tax_Payments.pdf'
 
   const attachments = useMemo(() => {
     const list: { name: string; description: string; bytes: Uint8Array | null }[] = []
     if (uploads.stat) list.push({ name: uploads.stat.name, description: 'Statutory Accounts', bytes: uploads.stat.bytes })
     if (generated) list.push({ name: generated.accountsName, description: 'Accounts', bytes: generated.accounts })
     if (uploads.letter) list.push({ name: uploads.letter.name, description: 'Covering Letter', bytes: uploads.letter.bytes })
-    if (uploads.sa) list.push({ name: uploads.sa.name, description: 'Personal Tax Return', bytes: uploads.sa.bytes })
+    saEntries.forEach((entry) => {
+      const who = personName(entry.sa)
+      list.push({
+        name: entry.file.name,
+        description: saEntries.length > 1 ? `Personal Tax Return${who ? ` – ${who}` : ''}` : 'Personal Tax Return',
+        bytes: entry.file.bytes,
+      })
+    })
     if (generated) list.push({ name: generated.paymentsName, description: 'Information Sheet', bytes: generated.payments })
     if (uploads.invoice) {
       const extra = invoice?.total != null ? ` – ${gbp(invoice.total)}${invoice.dueISO ? `, due ${longDate(invoice.dueISO)}` : ''}` : ''
       list.push({ name: uploads.invoice.name, description: `Invoice${extra}`, bytes: uploads.invoice.bytes })
     }
     return list
-  }, [uploads, generated, invoice])
+  }, [uploads, generated, invoice, saEntries])
 
   const siteUrl = (import.meta.env.VITE_SITE_URL as string | undefined) || window.location.origin
   const emailContent = useMemo(
@@ -226,13 +268,13 @@ export default function AccountsPack() {
 
   // ---------- generate ----------
   async function generate() {
-    if (!stat || !sa) return
+    if (!stat || saList.length === 0) return
     setGenerating(true)
     setGenError('')
     try {
-      const review = buildReview(stat, { dividends: personalDividends(sa) ?? undefined })
+      const review = buildReview(stat, { dividends: totalPersonalDividends(saList) ?? undefined })
       const accounts = await buildAccountsPack(stat, review)
-      const payments = await buildPaymentsPdf({ stat, sa, ct, checks, includeChecks })
+      const payments = await buildPaymentsPdf({ stat, saList, ct, checks, includeChecks })
       setGenerated({ accounts, payments, accountsName, paymentsName })
     } catch (e) {
       setGenError(e instanceof Error ? e.message : 'Could not build the documents.')
@@ -301,7 +343,8 @@ export default function AccountsPack() {
     setClient(null)
     setUploads({})
     setStat(null)
-    setSa(null)
+    setSaEntries([])
+    setSaError('')
     setInvoice(null)
     setSlotError({})
     setCtAmount('')
@@ -411,19 +454,63 @@ export default function AccountsPack() {
           })}
         </div>
 
+        {/* Self Assessment return(s) — one or more */}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault()
+            setDragging('sa')
+          }}
+          onDragLeave={() => setDragging(null)}
+          onDrop={(e) => {
+            e.preventDefault()
+            setDragging(null)
+            handleSaFile(e.dataTransfer.files?.[0])
+          }}
+          className={`mt-3 rounded-md border border-dashed p-3 transition-colors ${
+            dragging === 'sa' ? 'border-accent bg-accent-light' : saEntries.length ? 'border-accent/40 bg-accent-light/40' : 'border-line'
+          }`}
+        >
+          <div className="text-sm font-medium text-ink">Self Assessment return(s)</div>
+          <div className="text-xs text-slate-650">Add one per person the pack should cover — for example both directors</div>
+          {saEntries.length > 0 && (
+            <div className="mt-2 space-y-1.5">
+              {saEntries.map((entry) => (
+                <div key={entry.id} className="flex items-center justify-between gap-2 rounded border border-line bg-white px-2.5 py-1.5">
+                  <div className="text-sm text-ink truncate">
+                    {entry.file.name}
+                    <span className="text-xs text-slate-650 ml-2">
+                      {entry.sa.name ?? 'name not found'}
+                      {entry.sa.taxYear ? ` · ${entry.sa.taxYear}` : ''}
+                    </span>
+                  </div>
+                  <button onClick={() => removeSa(entry.id)} className="text-xs text-slate-650 hover:text-warn shrink-0" title="Remove">
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <label className="mt-2 inline-block cursor-pointer text-sm font-medium text-accent hover:text-accent-dark">
+            {readingSa ? 'Reading…' : saEntries.length ? '+ Add another return' : 'Choose PDF, or drop it here'}
+            <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => handleSaFile(e.target.files?.[0])} />
+          </label>
+          <div className="text-[11px] text-slate-650 mt-1">Needed for the tax payments sheet</div>
+          {saError && <div className="text-xs text-warn mt-1">{saError}</div>}
+        </div>
+
         {stat && (
           <div className="mt-4 rounded-md bg-paper border border-line p-3 text-sm space-y-1">
             <div>
               <strong>{stat.companyName}</strong>
               {stat.companyNumber ? ` · ${stat.companyNumber}` : ''} · year ended {stat.periodLabel}
             </div>
-            {sa && (
-              <div className="text-slate-650">
-                Tax return: {sa.name ?? 'name not found'}
-                {sa.taxYear ? ` · ${sa.taxYear}` : ''}
-                {sa.utr ? ` · UTR ${sa.utr}` : ''}
+            {saEntries.map((entry) => (
+              <div key={entry.id} className="text-slate-650">
+                Tax return: {entry.sa.name ?? 'name not found'}
+                {entry.sa.taxYear ? ` · ${entry.sa.taxYear}` : ''}
+                {entry.sa.utr ? ` · UTR ${entry.sa.utr}` : ''}
               </div>
-            )}
+            ))}
             {invoice?.number && (
               <div className="text-slate-650">
                 Invoice {invoice.number}
@@ -443,11 +530,14 @@ export default function AccountsPack() {
                 {w}
               </div>
             ))}
-            {sa?.warnings.map((w, i) => (
-              <div key={i} className="text-warn">
-                {w}
-              </div>
-            ))}
+            {saEntries.flatMap((entry) =>
+              entry.sa.warnings.map((w, i) => (
+                <div key={`${entry.id}-${i}`} className="text-warn">
+                  {saEntries.length > 1 && entry.sa.name ? `${entry.sa.name}: ` : ''}
+                  {w}
+                </div>
+              )),
+            )}
             {nameMismatch && (
               <div className="text-warn">
                 The accounts are for “{stat.companyName}” but the selected client is “{client!.client_name}”. Check you have the right client.
@@ -530,8 +620,8 @@ export default function AccountsPack() {
         )}
         {stat && cards.length > 0 && (
           <div className="text-sm text-ink mb-3">
-            {cards.map((c) => (
-              <div key={c.title} className="flex justify-between max-w-sm">
+            {cards.map((c, i) => (
+              <div key={`${c.title}-${i}`} className="flex justify-between max-w-sm">
                 <span>
                   {c.label} <span className="text-slate-650">· due {c.dueText}</span>
                 </span>
@@ -546,12 +636,12 @@ export default function AccountsPack() {
         )}
         <button
           onClick={generate}
-          disabled={!stat || !sa || generating}
+          disabled={!stat || saList.length === 0 || generating}
           className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-50 transition-colors"
         >
           {generating ? 'Building…' : generated ? 'Rebuild documents' : 'Build the two documents'}
         </button>
-        {(!stat || !sa) && <span className="ml-3 text-xs text-slate-650">Add the statutory accounts and the tax return first.</span>}
+        {(!stat || saList.length === 0) && <span className="ml-3 text-xs text-slate-650">Add the statutory accounts and at least one tax return first.</span>}
         {genError && <p className="text-sm text-warn mt-2">{genError}</p>}
         {generated && urls && (
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">

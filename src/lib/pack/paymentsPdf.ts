@@ -1,9 +1,14 @@
 // Builds "<Client>_<year>_Tax_Payments.pdf": a private-client tax payment sheet
 // pulling together the Corporation Tax figures (typed in or read from the
-// covering letter), the Self Assessment payment schedule and a short sense-check.
+// covering letter), the Self Assessment payment schedule(s) and a short
+// sense-check. A pack can carry more than one personal tax return (for
+// example both directors) — every section that is personal to a return
+// repeats once per return, labelled with that person's name once there is
+// more than one.
 
 import type { Statutory } from './statutory'
 import type { Sa100, DueGroup } from './sa100'
+import { personName } from './sa100'
 import type { Check, CtInfo } from './checks'
 import { gbp, longDate, type Pence } from './money'
 import { COLORS as C, renderPdf, addBookmarks, type DocDef } from './pdfEnv'
@@ -24,7 +29,7 @@ const LINKS = {
 
 export interface PaymentsInput {
   stat: Statutory
-  sa: Sa100 | null
+  saList: Sa100[]
   ct: CtInfo | null
   checks: Check[]
   includeChecks: boolean
@@ -42,12 +47,24 @@ export interface PaymentCard {
 const monthName = (g: DueGroup) => (g.heading.split(' ')[1] ?? g.heading).toUpperCase()
 
 /** The payments to highlight: Corporation Tax plus each Self Assessment due date with money to pay. */
-export function paymentCards(sa: Sa100 | null, ct: CtInfo | null): PaymentCard[] {
+export function paymentCards(saList: Sa100[], ct: CtInfo | null): PaymentCard[] {
   const cards: PaymentCard[] = []
   if (ct && ct.amount > 0)
     cards.push({ title: 'CORPORATION TAX', label: 'Corporation Tax', amount: ct.amount, dueISO: ct.dueISO, dueText: longDate(ct.dueISO) })
-  for (const g of sa?.position?.groups ?? []) {
-    if (g.total > 0) cards.push({ title: `PERSONAL TAX - ${monthName(g)}`, label: `Personal Tax – ${g.heading.split(' ')[1] ?? g.heading}`, amount: g.total, dueISO: g.dateISO, dueText: g.heading })
+  const multi = saList.length > 1
+  for (const sa of saList) {
+    const person = personName(sa)
+    for (const g of sa.position?.groups ?? []) {
+      if (g.total <= 0) continue
+      const month = g.heading.split(' ')[1] ?? g.heading
+      cards.push({
+        title: multi && person ? `PERSONAL TAX - ${monthName(g)} (${person.split(' ')[0].toUpperCase()})` : `PERSONAL TAX - ${monthName(g)}`,
+        label: multi && person ? `Personal Tax – ${month} (${person.split(' ')[0]})` : `Personal Tax – ${month}`,
+        amount: g.total,
+        dueISO: g.dateISO,
+        dueText: g.heading,
+      })
+    }
   }
   return cards
 }
@@ -60,6 +77,14 @@ export function fileStem(name: string): string {
     .replace(/^(mr|mrs|ms|miss|dr|mx)\.?\s+/i, '')
     .replace(/[^A-Za-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
+}
+
+/** File name for the tax payments sheet, covering one return or several. */
+export function paymentsFileName(stat: Statutory, saList: Sa100[]): string {
+  const year = saList.find((s) => s.taxYear)?.taxYear ?? ''
+  const stems = saList.map((s) => fileStem(s.name ?? '')).filter(Boolean)
+  const namePart = stems.length ? stems.join('_and_') : fileStem(stat.companyName)
+  return `${namePart}${year ? `_${year}` : ''}_Tax_Payments.pdf`
 }
 
 // ---------- small building blocks ----------
@@ -99,19 +124,21 @@ function cards(list: PaymentCard[]): DocDef {
 // ---------- the document ----------
 
 export async function buildPaymentsPdf(inp: PaymentsInput): Promise<Uint8Array> {
-  const { stat, sa, ct } = inp
+  const { stat, saList, ct } = inp
   const f = stat.figures
-  const clientName = sa?.name ?? stat.directors[0] ?? ''
-  const list = paymentCards(sa, ct)
+  const multi = saList.length > 1
+  const peopleNames = saList.map((s) => s.name).filter((n): n is string => !!n)
+  const subtitleName = peopleNames.length ? peopleNames.join(' and ') : stat.directors[0] ?? ''
+  const list = paymentCards(saList, ct)
   const total = paymentsTotal(list)
   const checks = inp.includeChecks ? inp.checks : []
-  const pos = sa?.position ?? null
+  const anySa = saList.some((s) => s.position && s.position.groups.length)
 
   const content: DocDef[] = []
 
   // ---- Page 1: what to pay ----
   content.push({ text: 'Tax payments requiring attention', fontSize: 20, bold: true, color: C.navy, id: 'payments', margin: [0, 0, 0, 2] })
-  content.push({ text: [clientName, stat.companyName].filter(Boolean).join(' and '), fontSize: 10, color: C.grey, margin: [0, 0, 0, 10] })
+  content.push({ text: [subtitleName, stat.companyName].filter(Boolean).join(' and '), fontSize: 10, color: C.grey, margin: [0, 0, 0, 10] })
 
   if (list.length) {
     content.push(cards(list))
@@ -135,12 +162,15 @@ export async function buildPaymentsPdf(inp: PaymentsInput): Promise<Uint8Array> 
     content.push({ text: 'No payments are due on the figures supplied.', fontSize: 11, color: C.grey })
   }
 
-  // Payment control (kept near the top so it is never separated from the amounts)
+  // Payment control (kept near the top so it is never separated from the amounts).
+  // The specific-credit sentence only makes sense for a single return; with
+  // several returns the control stays general.
   const mentionsPrior = checks.some((c) => c.tone === 'attention' && /prior payments/i.test(c.text))
-  const credit = pos?.balance && pos.balance.amount < 0 ? -pos.balance.amount : null
+  const singleCredit = !multi && saList[0]?.position?.balance && saList[0].position.balance.amount < 0 ? -saList[0].position!.balance!.amount : null
   const control =
     'Before paying, confirm each live HMRC balance and use the correct tax-specific reference. Do not combine the company and personal payments.' +
-    (mentionsPrior && credit != null ? ` The previous-payments discrepancy described in the sense-check must be resolved before relying on the ${gbp(credit)} credit.` : '')
+    (mentionsPrior && singleCredit != null ? ` The previous-payments discrepancy described in the sense-check must be resolved before relying on the ${gbp(singleCredit)} credit.` : '') +
+    (mentionsPrior && multi ? ' The previous-payments discrepancy described in the sense-check must be resolved before relying on the credit(s) below.' : '')
   content.push({
     table: {
       widths: ['*'],
@@ -170,21 +200,24 @@ export async function buildPaymentsPdf(inp: PaymentsInput): Promise<Uint8Array> 
     content.push(link('HMRC: Pay Corporation Tax now', LINKS.ctPay))
   }
 
-  // Self Assessment details
-  if (pos && pos.groups.length) {
+  // Self Assessment details — one block per return
+  for (const sa of saList) {
+    const pos = sa.position
+    if (!pos || !pos.groups.length) continue
     const hasBalance = pos.balance && /offset/i.test(pos.balance.label)
     const rows: DocDef[][] = []
     const th = (t: string, al?: string) => ({ text: t, color: C.white, bold: true, fontSize: 9, fillColor: C.navy, margin: [5, 4, 5, 4], alignment: al })
     rows.push([th('Due date'), th('Description'), th('Amount', 'right')])
     for (const g of pos.groups) {
-      if (g.items.length > 1) g.items.forEach((it) => {
-        const label = hasBalance ? it.label.replace(/repayment due/i, 'credit carried forward') : it.label
-        rows.push([
-          { text: g.heading, fontSize: 9, margin: [5, 4, 5, 4] },
-          { text: label, fontSize: 9, margin: [5, 4, 5, 4] },
-          { text: gbp(it.amount), fontSize: 9, alignment: 'right', margin: [5, 4, 5, 4] },
-        ])
-      })
+      if (g.items.length > 1)
+        g.items.forEach((it) => {
+          const label = hasBalance ? it.label.replace(/repayment due/i, 'credit carried forward') : it.label
+          rows.push([
+            { text: g.heading, fontSize: 9, margin: [5, 4, 5, 4] },
+            { text: label, fontSize: 9, margin: [5, 4, 5, 4] },
+            { text: gbp(it.amount), fontSize: 9, alignment: 'right', margin: [5, 4, 5, 4] },
+          ])
+        })
       const hi = { fillColor: C.amber, color: C.red, bold: true, fontSize: 9.5, margin: [5, 4, 5, 4] }
       const isPoa = g.items.length === 1
       rows.push([
@@ -193,16 +226,18 @@ export async function buildPaymentsPdf(inp: PaymentsInput): Promise<Uint8Array> 
         { text: gbp(g.total), alignment: 'right', ...hi },
       ])
     }
-    content.push(heading('Personal Self Assessment details'))
+    content.push(heading(multi && personName(sa) ? `Personal Self Assessment details – ${personName(sa)}` : 'Personal Self Assessment details'))
     content.push({
       table: { headerRows: 1, widths: [90, '*', 80], body: rows },
       layout: { hLineColor: () => C.line, vLineColor: () => C.line, hLineWidth: () => 0.6, vLineWidth: () => 0.6 },
     })
     const saRows: [string, string][] = []
-    if (sa?.utr) saRows.push(['Self Assessment reference', `${sa.utr}K`])
-    if (clientName) saRows.push(['Client', clientName])
-    if (sa?.utr) saRows.push(['UTR', sa.utr])
+    if (sa.utr) saRows.push(['Self Assessment reference', `${sa.utr}K`])
+    if (sa.name) saRows.push(['Client', sa.name])
+    if (sa.utr) saRows.push(['UTR', sa.utr])
     content.push({ ...kvTable(saRows, 150), margin: [0, 6, 0, 0], unbreakable: true })
+  }
+  if (anySa) {
     content.push(link('GOV.UK: Self Assessment payment guidance', LINKS.saGuide))
     content.push(link('HMRC: Pay Self Assessment now', LINKS.saPay))
   }
@@ -213,9 +248,12 @@ export async function buildPaymentsPdf(inp: PaymentsInput): Promise<Uint8Array> 
   if (stat.companyNumber) info.push(['Company number', stat.companyNumber])
   if (stat.directors.length) info.push([stat.directors.length > 1 ? 'Directors' : 'Director', stat.directors.join(', ')])
   if (stat.periodLabel) info.push(['Company year end', stat.periodLabel])
-  if (sa?.taxYear) info.push(['Personal tax year', sa.taxYear])
-  if (sa?.nino) info.push(['NI number', sa.nino])
-  if (sa?.agentRef) info.push(['Agent reference', sa.agentRef])
+  for (const sa of saList) {
+    const suffix = multi && personName(sa) ? ` – ${personName(sa)}` : ''
+    if (sa.taxYear) info.push([`Personal tax year${suffix}`, sa.taxYear])
+    if (sa.nino) info.push([`NI number${suffix}`, sa.nino])
+    if (sa.agentRef) info.push([`Agent reference${suffix}`, sa.agentRef])
+  }
   content.push(kvTable(info))
 
   // Company financial summary
@@ -249,9 +287,10 @@ export async function buildPaymentsPdf(inp: PaymentsInput): Promise<Uint8Array> 
     })
   }
 
-  // Personal tax summary
-  const s = sa?.sa302
-  if (s) {
+  // Personal tax summary — one block per return
+  for (const sa of saList) {
+    const s = sa.sa302
+    if (!s) continue
     const inc = (re: RegExp) => s.income.find((i) => re.test(i.label))?.amount
     const rows: [string, string][] = []
     const pay = inc(/pay from all employments/i)
@@ -259,11 +298,13 @@ export async function buildPaymentsPdf(inp: PaymentsInput): Promise<Uint8Array> 
     if (pay != null) rows.push(['Employment pay', gbp(pay)])
     if (div != null) rows.push(['UK dividends', gbp(div)])
     if (s.totalIncome != null) rows.push(['Total income', gbp(s.totalIncome)])
-    if (s.incomeTax != null) rows.push([`${sa?.taxYear ?? ''} Income Tax`.trim(), gbp(s.incomeTax)])
+    if (s.incomeTax != null) rows.push([`${sa.taxYear ?? ''} Income Tax`.trim(), gbp(s.incomeTax)])
+    const pos = sa.position
     if (pos && pos.lessTotal != null && pos.lessTotal !== 0) rows.push(['Prior payments used in summary', gbp(-pos.lessTotal)])
-    if (credit != null) rows.push(['Credit carried forward', gbp(credit)])
+    const creditHere = pos?.balance && pos.balance.amount < 0 ? -pos.balance.amount : null
+    if (creditHere != null) rows.push(['Credit carried forward', gbp(creditHere)])
     if (rows.length) {
-      content.push(heading('Personal tax summary'))
+      content.push(heading(multi && personName(sa) ? `Personal tax summary – ${personName(sa)}` : 'Personal tax summary'))
       content.push(kvTable(rows, 200))
     }
   }
@@ -286,7 +327,7 @@ export async function buildPaymentsPdf(inp: PaymentsInput): Promise<Uint8Array> 
       stack: [
         { text: 'Limitations', bold: true, fontSize: 10, color: C.navy, margin: [0, 0, 0, 3] },
         {
-          text: 'This sheet is an internal sense-check based on the supplied statutory accounts, letter and Self Assessment return. It does not confirm CT600 filing, live HMRC balances, bank interest or payment allocation.',
+          text: 'This sheet is an internal sense-check based on the supplied statutory accounts and Self Assessment return(s). It does not confirm CT600 filing, live HMRC balances, bank interest or payment allocation.',
           fontSize: 8.5,
           color: C.grey,
         },
@@ -325,6 +366,6 @@ export async function buildPaymentsPdf(inp: PaymentsInput): Promise<Uint8Array> 
       { title: 'Company and personal information', dest: 'information' },
       ...(checks.length ? [{ title: 'Sense-check information', dest: 'sense-check' }] : []),
     ],
-    { title: `Tax payments – ${clientName || stat.companyName}`, author: FIRM, subject: 'Private client tax payment sheet' },
+    { title: `Tax payments – ${subtitleName || stat.companyName}`, author: FIRM, subject: 'Private client tax payment sheet' },
   )
 }

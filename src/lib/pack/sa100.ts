@@ -264,3 +264,13 @@ export function parseSa100(pages: TPage[]): Sa100 {
 
   return out
 }
+
+/** "Ms Daniela Zummo" -> "Daniela Zummo" (title stripped; used when several returns are on one pack). */
+export function personName(sa: Pick<Sa100, 'name'> | null | undefined): string {
+  return (sa?.name ?? '').replace(/^(mr|mrs|ms|miss|dr|mx)\.?\s+/i, '').trim()
+}
+
+/** "Ms Daniela Zummo" -> "Daniela" */
+export function personFirstName(sa: Pick<Sa100, 'name'> | null | undefined): string {
+  return personName(sa).split(/\s+/)[0] ?? ''
+}
