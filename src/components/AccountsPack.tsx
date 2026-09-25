@@ -90,8 +90,11 @@ export default function AccountsPack() {
 
   const [confirming, setConfirming] = useState(false)
   const [sending, setSending] = useState(false)
-  const [sendState, setSendState] = useState<'idle' | 'sent' | 'error'>('idle')
+  const [sendState, setSendState] = useState<'idle' | 'sent' | 'scheduled' | 'error'>('idle')
   const [sendError, setSendError] = useState('')
+  const [sendWhen, setSendWhen] = useState<'now' | 'later'>('now')
+  const [scheduleAt, setScheduleAt] = useState('') // datetime-local input value, local time
+  const [scheduledFor, setScheduledFor] = useState('') // human-readable, set once sent, for the confirmation banner
   const [dragging, setDragging] = useState<SlotKey | 'sa' | null>(null)
   const clientKey = useRef(0)
 
@@ -292,8 +295,25 @@ export default function AccountsPack() {
   const totalBytes = attachments.reduce((a, f) => a + (f.bytes?.length ?? 0), 0)
   const tooBig = totalBytes > 26 * 1024 * 1024
 
+  // Resend can only schedule up to 30 days ahead. scheduleAt is whatever the
+  // datetime-local input holds (local time, no timezone info); Date parses
+  // that as the browser's own local time, which is what we want.
+  const scheduleDate = sendWhen === 'later' && scheduleAt ? new Date(scheduleAt) : null
+  const scheduleInPast = !!scheduleDate && scheduleDate.getTime() <= Date.now()
+  const scheduleTooFar = !!scheduleDate && scheduleDate.getTime() > Date.now() + 30 * 24 * 60 * 60 * 1000
+  const scheduleInvalid = sendWhen === 'later' && (!scheduleDate || scheduleInPast || scheduleTooFar)
+  const canConfirm = !scheduleInvalid
+
+  // "YYYY-MM-DDTHH:mm" in local time, for the datetime-local input's min/max.
+  const toLocalInputValue = (d: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+  const minScheduleValue = toLocalInputValue(new Date(Date.now() + 60 * 1000))
+  const maxScheduleValue = toLocalInputValue(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000))
+
   async function send() {
-    if (!client || !generated || tooBig) return
+    if (!client || !generated || tooBig || scheduleInvalid) return
     setSending(true)
     setSendError('')
     try {
@@ -318,6 +338,7 @@ export default function AccountsPack() {
           html: emailContent.html,
           text: emailContent.text,
           attachments: attachments.map((a) => ({ filename: a.name, content: toBase64(a.bytes!) })),
+          ...(scheduleDate ? { scheduledAt: scheduleDate.toISOString() } : {}),
         }),
       })
       if (!res.ok) {
@@ -329,7 +350,14 @@ export default function AccountsPack() {
         }
         throw new Error(msg)
       }
-      setSendState('sent')
+      if (scheduleDate) {
+        setScheduledFor(
+          scheduleDate.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+        )
+        setSendState('scheduled')
+      } else {
+        setSendState('sent')
+      }
       setConfirming(false)
     } catch (e) {
       setSendState('error')
@@ -358,6 +386,9 @@ export default function AccountsPack() {
     setGenerated(null)
     setSendState('idle')
     setConfirming(false)
+    setSendWhen('now')
+    setScheduleAt('')
+    setScheduledFor('')
     setEmail('')
     setForename('')
     setSurname('')
@@ -698,9 +729,42 @@ export default function AccountsPack() {
           {missingEmail && <p className="text-xs text-warn mb-1">This client has no email address. Add one in step 1.</p>}
           {tooBig && <p className="text-xs text-warn mb-1">The attachments are over the 26 MB the email service can carry. Compress the larger PDFs and try again.</p>}
 
-          {sendState === 'sent' ? (
+          {sendState !== 'sent' && sendState !== 'scheduled' && (
+            <div className="mb-3">
+              <div className="text-xs font-medium text-slate-650 mb-1">When to send</div>
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="flex items-center gap-1.5 text-sm text-ink cursor-pointer">
+                  <input type="radio" name="sendWhen" checked={sendWhen === 'now'} onChange={() => setSendWhen('now')} />
+                  Send now
+                </label>
+                <label className="flex items-center gap-1.5 text-sm text-ink cursor-pointer">
+                  <input type="radio" name="sendWhen" checked={sendWhen === 'later'} onChange={() => setSendWhen('later')} />
+                  Send later
+                </label>
+                {sendWhen === 'later' && (
+                  <input
+                    type="datetime-local"
+                    value={scheduleAt}
+                    onChange={(e) => setScheduleAt(e.target.value)}
+                    min={minScheduleValue}
+                    max={maxScheduleValue}
+                    className={`${inputCls} w-auto`}
+                  />
+                )}
+              </div>
+              {sendWhen === 'later' && scheduleInPast && <p className="text-xs text-warn mt-1">Pick a time in the future.</p>}
+              {sendWhen === 'later' && scheduleTooFar && <p className="text-xs text-warn mt-1">Resend can only schedule up to 30 days ahead.</p>}
+              {sendWhen === 'later' && !scheduleAt && <p className="text-xs text-slate-650 mt-1">Times are in your computer's own timezone.</p>}
+            </div>
+          )}
+
+          {sendState === 'sent' || sendState === 'scheduled' ? (
             <div className="rounded-md bg-accent-light border border-accent/30 p-3 text-sm text-accent-dark flex items-center justify-between">
-              <span>Sent to {email}. A copy has been BCC’d to you.</span>
+              <span>
+                {sendState === 'scheduled'
+                  ? `Scheduled to send to ${email} on ${scheduledFor}. A copy will be BCC'd to you when it goes out.`
+                  : `Sent to ${email}. A copy has been BCC'd to you.`}
+              </span>
               <button onClick={startAgain} className="font-medium underline">
                 Start another
               </button>
@@ -708,23 +772,31 @@ export default function AccountsPack() {
           ) : !confirming ? (
             <button
               onClick={() => setConfirming(true)}
-              disabled={!canReview || tooBig}
+              disabled={!canReview || tooBig || scheduleInvalid}
               className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-50 transition-colors"
             >
-              Review and send
+              {sendWhen === 'later' ? 'Review and schedule' : 'Review and send'}
             </button>
           ) : (
             <div className="rounded-md border border-warn/40 bg-warnbg p-3">
               <div className="text-sm text-ink mb-2">
-                Send this to <strong>{email}</strong> with {attachments.length} PDFs attached? It cannot be recalled.
+                {sendWhen === 'later' ? (
+                  <>
+                    Schedule this to send to <strong>{email}</strong> on <strong>{scheduledFor || (scheduleDate && scheduleDate.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</strong> with {attachments.length} PDFs attached?
+                  </>
+                ) : (
+                  <>
+                    Send this to <strong>{email}</strong> with {attachments.length} PDFs attached? It cannot be recalled.
+                  </>
+                )}
               </div>
               <div className="flex gap-3">
                 <button
                   onClick={send}
-                  disabled={sending}
+                  disabled={sending || !canConfirm}
                   className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-50 transition-colors"
                 >
-                  {sending ? 'Sending…' : 'Send now'}
+                  {sending ? (sendWhen === 'later' ? 'Scheduling…' : 'Sending…') : sendWhen === 'later' ? 'Schedule send' : 'Send now'}
                 </button>
                 <button onClick={() => setConfirming(false)} disabled={sending} className="text-sm font-medium text-slate-650 hover:text-ink">
                   Cancel

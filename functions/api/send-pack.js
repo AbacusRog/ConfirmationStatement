@@ -1,11 +1,17 @@
 // POST /api/send-pack
 //   Authorization: Bearer <Supabase access token>
-//   { to, subject, html, text, attachments: [{ filename, content /* base64 */ }] }
+//   { to, subject, html, text, attachments: [{ filename, content /* base64 */ }],
+//     scheduledAt?: <ISO 8601 timestamp, up to 30 days ahead> }
 //
 // Sends the Accounts Pack email via Resend with the PDFs attached and BCCs
 // the firm. Unlike /api/send, this endpoint requires a signed-in user: it
 // carries client documents, so it must not be callable by anyone who finds
 // the URL. The token is checked against Supabase Auth.
+//
+// scheduledAt is optional — when present, Resend holds the email and sends
+// it at that time instead of immediately (its own limit is 30 days ahead,
+// checked here too so a bad clock or stale form doesn't silently schedule
+// something absurd).
 //
 // Environment (Cloudflare Pages -> Settings -> Environment variables):
 //   RESEND_API_KEY, SEND_FROM_ADDRESS, BCC_ADDRESS (optional)
@@ -48,10 +54,21 @@ export async function onRequestPost(context) {
     return json(400, { error: 'Invalid JSON body' })
   }
 
-  const { to, subject, html, text, attachments } = payload || {}
+  const { to, subject, html, text, attachments, scheduledAt } = payload || {}
   if (!to || !EMAIL_RE.test(String(to).trim())) return json(400, { error: 'A valid recipient email is required' })
   if (!subject || !html) return json(400, { error: 'Missing subject or html' })
   if (!Array.isArray(attachments) || attachments.length === 0) return json(400, { error: 'No attachments supplied' })
+
+  let scheduledAtIso
+  if (scheduledAt != null) {
+    const when = new Date(scheduledAt)
+    if (Number.isNaN(when.getTime())) return json(400, { error: 'scheduledAt is not a valid date' })
+    if (when.getTime() <= Date.now()) return json(400, { error: 'scheduledAt must be in the future' })
+    if (when.getTime() > Date.now() + 30 * 24 * 60 * 60 * 1000) {
+      return json(400, { error: 'Resend can only schedule an email up to 30 days ahead' })
+    }
+    scheduledAtIso = when.toISOString()
+  }
 
   let total = 0
   for (const a of attachments) {
@@ -73,9 +90,11 @@ export async function onRequestPost(context) {
       html,
       text: text || undefined,
       attachments: attachments.map((a) => ({ filename: a.filename, content: a.content })),
+      ...(scheduledAtIso ? { scheduled_at: scheduledAtIso } : {}),
     }),
   })
 
   if (!res.ok) return json(502, { error: `Resend error: ${await res.text()}` })
-  return json(200, { ok: true })
+  const sent = await res.json().catch(() => ({}))
+  return json(200, { ok: true, id: sent?.id, scheduledAt: scheduledAtIso })
 }

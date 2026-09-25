@@ -184,10 +184,17 @@ Turns a finished set of accounts into a client pack and emails it.
    review; every word of the statutory accounts is carried across and the
    tab tells you if any are not) and *<Name>_<year>_Tax_Payments.pdf*.
 6. **Review and send**: shows the email exactly as the client will see it,
-   the six attachments, and asks for a final confirmation. Sent through
-   Resend with a BCC to you.
+   the six attachments, and asks for a final confirmation. Choose **Send
+   now** or **Send later** — for a scheduled send, pick a date and time (up
+   to 30 days ahead) and Resend holds the email and sends it then. Either
+   way it's sent through Resend with a BCC to you.
 
 Notes:
+
+- A scheduled send can't be cancelled or changed from this app once
+  confirmed — Resend is holding it, not this app. If you need to cancel
+  one, that has to be done directly against the Resend API (`POST
+  /emails/{id}/cancel`) using the email id, or from the Resend dashboard.
 
 - Sending uses `/api/send-pack`, which **requires you to be signed in**
   (it checks your Supabase session). It needs `VITE_SUPABASE_URL` and
