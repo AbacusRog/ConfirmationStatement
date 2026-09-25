@@ -20,9 +20,23 @@
 // access token rather than the service-role key, so the existing
 // "authenticated users only" row-level-security policy on
 // cs_mailer_scheduled_packs applies exactly as it does from the browser.
+//
+// A GET is also the moment a scheduled Accounts Pack gets its permanent
+// entry in cs_mailer_email_log (the "Sent emails" record): when a row's
+// Resend status has moved on from "scheduled" to something that means it
+// actually went out, that's logged (via the service-role key, same as
+// /api/send-pack does for a "send now") before the row is dropped. A
+// status that means it didn't go out (cancelled, bounced, failed) is
+// dropped with nothing logged — it was never actually delivered.
+
+import { logSentEmail } from '../_lib/emailLog.js'
 
 const json = (status, obj) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } })
+
+// Resend's last_event values that mean the send attempt is over and it did
+// NOT reach the client — nothing to log for these, just drop the row.
+const DID_NOT_SEND = new Set(['canceled', 'failed', 'bounced', 'suppressed'])
 
 function supabaseUrl(env) {
   return (env.SUPABASE_URL || env.VITE_SUPABASE_URL || '').replace(/\/$/, '')
@@ -71,7 +85,7 @@ export async function onRequestGet(context) {
   if (!env.RESEND_API_KEY) return json(500, { error: 'RESEND_API_KEY is not set' })
 
   const sbRes = await fetch(
-    `${who.supabaseUrl}/rest/v1/cs_mailer_scheduled_packs?select=id,resend_id,client_name,to_email,subject,scheduled_at&order=scheduled_at.asc`,
+    `${who.supabaseUrl}/rest/v1/cs_mailer_scheduled_packs?select=id,resend_id,client_id,client_name,to_email,subject,scheduled_at&order=scheduled_at.asc`,
     { headers: sbHeaders(who) }
   )
   if (!sbRes.ok) return json(502, { error: `Supabase query failed: ${await sbRes.text()}` })
@@ -95,6 +109,21 @@ export async function onRequestGet(context) {
         scheduledAt: data.scheduled_at || row.scheduled_at,
       })
     } else {
+      // Resolved one way or the other. If Resend confirms it actually went
+      // (anything other than a cancel/failure/bounce/suppression), this is
+      // the one and only place that email's permanent sent-log entry gets
+      // written — a scheduled send has no other moment where the server
+      // runs again after it goes out.
+      if (data && !DID_NOT_SEND.has(data.last_event)) {
+        await logSentEmail(env, {
+          clientId: row.client_id,
+          clientName: row.client_name,
+          toEmail: row.to_email,
+          subject: row.subject,
+          kind: 'Accounts Pack',
+          sentAt: row.scheduled_at,
+        })
+      }
       await deleteRow(who, row.id)
     }
   }

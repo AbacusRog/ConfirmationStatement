@@ -144,6 +144,7 @@ export default function EmailPreview({
           companyName: client.client_name,
           statementDate,
           dueDate,
+          clientId: client.id,
         }),
       })
       if (!res.ok) {

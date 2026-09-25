@@ -340,6 +340,8 @@ export default function AccountsPack() {
           html: emailContent.html,
           text: emailContent.text,
           attachments: attachments.map((a) => ({ filename: a.name, content: toBase64(a.bytes!) })),
+          clientId: client.id,
+          clientName: client.client_name,
           ...(scheduleDate ? { scheduledAt: scheduleDate.toISOString() } : {}),
         }),
       })

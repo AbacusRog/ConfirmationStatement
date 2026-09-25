@@ -220,6 +220,25 @@ Notes:
   who is calling it.
 - The total attachment size is limited to about 26 MB.
 
+## Using the Sent Log tab
+
+Every client-facing email this app sends — Confirmation Statement
+reminders and Accounts Packs — gets a permanent row in the **Sent Log**
+tab: who it went to, the client, the subject, and exactly when it was
+sent. Search narrows it by client name, email address or subject, and the
+Type dropdown filters to just one kind.
+
+A row is written the moment an email actually goes out, not when it's
+requested — for a scheduled Accounts Pack, that's later, once the
+Scheduled emails panel notices Resend has actually sent it, not the
+moment you scheduled it. A send that's cancelled, or that bounces, never
+gets a row at all, since it never reached the client.
+
+This needs the `supabase/schema.sql` update applied (adds a
+`cs_mailer_email_log` table) plus `SUPABASE_SERVICE_ROLE_KEY` — already
+needed for the RED-tasks digest above, so nothing new to set up if that's
+already configured.
+
 ## Daily RED tasks email
 
 `/api/red-tasks-digest` sends you an email listing every RED task (the

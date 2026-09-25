@@ -5,6 +5,8 @@
 // statementDate / dueDate are ISO strings (YYYY-MM-DD). Both are optional —
 // if omitted, the email is sent without the notice box.
 
+import { logSentEmail } from '../_lib/emailLog.js'
+
 const COLORS = {
   ink: '#1C2430',
   slate: '#425064',
@@ -136,7 +138,7 @@ export async function onRequestPost(context) {
     return new Response('Invalid JSON body', { status: 400 })
   }
 
-  const { to, subject, body, companyName, statementDate, dueDate } = payload
+  const { to, subject, body, companyName, statementDate, dueDate, clientId } = payload
   if (!to || !subject || !body) {
     return new Response('Missing to, subject, or body', { status: 400 })
   }
@@ -171,6 +173,8 @@ export async function onRequestPost(context) {
     const errText = await resendRes.text()
     return new Response(`Resend error: ${errText}`, { status: 502 })
   }
+
+  await logSentEmail(env, { clientId, clientName: companyName, toEmail: to, subject, kind: 'Confirmation Statement' })
 
   return new Response('OK', { status: 200 })
 }

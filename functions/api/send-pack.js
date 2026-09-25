@@ -22,6 +22,8 @@
 const MAX_TOTAL_BYTES = 38 * 1024 * 1024 // Resend allows 40 MB per email, base64 included
 const EMAIL_RE = /^[^\s@<>()]+@[^\s@<>()]+\.[^\s@<>()]+$/
 
+import { logSentEmail } from '../_lib/emailLog.js'
+
 const json = (status, obj) =>
   new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } })
 
@@ -54,7 +56,7 @@ export async function onRequestPost(context) {
     return json(400, { error: 'Invalid JSON body' })
   }
 
-  const { to, subject, html, text, attachments, scheduledAt } = payload || {}
+  const { to, subject, html, text, attachments, scheduledAt, clientId, clientName } = payload || {}
   if (!to || !EMAIL_RE.test(String(to).trim())) return json(400, { error: 'A valid recipient email is required' })
   if (!subject || !html) return json(400, { error: 'Missing subject or html' })
   if (!Array.isArray(attachments) || attachments.length === 0) return json(400, { error: 'No attachments supplied' })
@@ -96,5 +98,13 @@ export async function onRequestPost(context) {
 
   if (!res.ok) return json(502, { error: `Resend error: ${await res.text()}` })
   const sent = await res.json().catch(() => ({}))
+
+  // Only a "send now" is logged here — a scheduled one hasn't actually
+  // gone anywhere yet, so it's logged later by /api/scheduled-packs, once
+  // Resend confirms it's actually been sent.
+  if (!scheduledAtIso) {
+    await logSentEmail(env, { clientId, clientName, toEmail: String(to).trim(), subject, kind: 'Accounts Pack' })
+  }
+
   return json(200, { ok: true, id: sent?.id, scheduledAt: scheduledAtIso })
 }

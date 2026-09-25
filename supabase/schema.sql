@@ -199,3 +199,37 @@ create policy "allow authenticated on cs_mailer_scheduled_packs" on cs_mailer_sc
   for all
   using (auth.role() = 'authenticated')
   with check (auth.role() = 'authenticated');
+
+-- A permanent record of every client-facing email this app has actually
+-- sent (Confirmation Statement reminders and Accounts Packs) — who it went
+-- to, when, and what it was. Rows are written server-side (with the
+-- service-role key, since /api/send has no signed-in user to write as)
+-- right after Resend accepts the send, so this only ever records emails
+-- that really went out — never a scheduled one that's still pending or
+-- one that got cancelled. For a scheduled Accounts Pack, the row is
+-- written later, by /api/scheduled-packs, once Resend's own status shows
+-- it has actually gone rather than at the moment it was scheduled.
+create table if not exists cs_mailer_email_log (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid references cs_mailer_clients(id) on delete set null,
+  client_name text,
+  to_email text not null,
+  subject text not null,
+  kind text not null, -- 'Confirmation Statement' or 'Accounts Pack'
+  sent_at timestamptz not null default now()
+);
+
+create index if not exists cs_mailer_email_log_sent_at_idx on cs_mailer_email_log (sent_at desc);
+create index if not exists cs_mailer_email_log_search_idx on cs_mailer_email_log
+  using gin (to_tsvector('english', coalesce(client_name, '') || ' ' || to_email || ' ' || subject));
+
+alter table cs_mailer_email_log enable row level security;
+
+-- Read-only from the app's own signed-in session; only the server (with
+-- the service-role key, which bypasses RLS entirely) ever writes to it, so
+-- there's no "with check" — nobody should be able to insert a fake sent
+-- record from the browser.
+drop policy if exists "allow authenticated read on cs_mailer_email_log" on cs_mailer_email_log;
+create policy "allow authenticated read on cs_mailer_email_log" on cs_mailer_email_log
+  for select
+  using (auth.role() = 'authenticated');
